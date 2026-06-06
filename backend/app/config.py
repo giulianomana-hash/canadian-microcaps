@@ -7,7 +7,7 @@ load_dotenv()
 
 
 class Settings:
-    supabase_url: str = os.getenv("SUPABASE_URL", "").strip()
+    supabase_url: str = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
     supabase_key: str = os.getenv("SUPABASE_KEY", "").strip()
     cors_origins_raw: str = os.getenv("CORS_ORIGINS", "http://localhost:5173").strip()
 
