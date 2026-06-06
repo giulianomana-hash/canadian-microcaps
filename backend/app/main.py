@@ -1,15 +1,19 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import filings, watchlist
+from .routers import filings, refresh, sedar, watchlist
+
+logging.basicConfig(level=logging.INFO)
 
 settings = get_settings()
 
 app = FastAPI(
     title="SedarWatchlist API",
-    description="Backend for tracking Canadian microcap companies and their filings.",
-    version="0.1.0",
+    description="Backend for tracking Canadian microcap companies and their SEDAR+ filings.",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -22,6 +26,8 @@ app.add_middleware(
 
 app.include_router(watchlist.router)
 app.include_router(filings.router)
+app.include_router(sedar.router)
+app.include_router(refresh.router)
 
 
 @app.get("/health", tags=["meta"])

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWatchlistClient } from "../api/watchlistClient.js";
+import SedarSearch from "./SedarSearch.jsx";
+import FilingsFeed from "./FilingsFeed.jsx";
 
 const DEFAULT_CONFIG = {
   apiBaseUrl: "http://localhost:8000",
@@ -14,16 +16,6 @@ function formatMarketCap(value) {
   return `$${value}`;
 }
 
-function parseQuery(query) {
-  const trimmed = query.trim();
-  if (!trimmed) return null;
-  // Convention: "TICKER - Company Name" or just a ticker.
-  const [tickerPart, ...nameParts] = trimmed.split(/[-–:]/);
-  const ticker = tickerPart.trim().toUpperCase();
-  const name = nameParts.join(" ").trim() || ticker;
-  return { ticker, name };
-}
-
 export default function SedarWatchlist({ pluginConfig }) {
   const config = useMemo(
     () => ({ ...DEFAULT_CONFIG, ...(pluginConfig ?? {}) }),
@@ -36,9 +28,7 @@ export default function SedarWatchlist({ pluginConfig }) {
   );
 
   const [entries, setEntries] = useState([]);
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -58,25 +48,42 @@ export default function SedarWatchlist({ pluginConfig }) {
     refresh();
   }, [refresh]);
 
-  const handleAdd = async (event) => {
-    event.preventDefault();
-    const parsed = parseQuery(query);
-    if (!parsed) return;
-
-    setSubmitting(true);
+  const addFromSedar = async (hit) => {
     setError(null);
     try {
       const created = await client.addWatchlistEntry({
         user_id: config.userId,
-        ticker: parsed.ticker,
-        name: parsed.name,
+        sedar_profile_id: hit.sedar_profile_id,
+        name: hit.name,
+        ticker: hit.ticker ?? null,
+        exchange: hit.exchange ?? null,
+        jurisdiction: hit.jurisdiction ?? null,
       });
       setEntries((prev) => [created, ...prev]);
-      setQuery("");
     } catch (err) {
       setError(err.message);
-    } finally {
-      setSubmitting(false);
+    }
+  };
+
+  const addManually = async (rawQuery) => {
+    const trimmed = (rawQuery ?? "").trim();
+    if (!trimmed) return;
+    setError(null);
+    // Convention: "TICKER - Company Name" or just a name.
+    const [first, ...rest] = trimmed.split(/[-–:]/);
+    const head = first.trim();
+    const tail = rest.join(" ").trim();
+    const ticker = tail ? head.toUpperCase() : null;
+    const name = tail || head;
+    try {
+      const created = await client.addWatchlistEntry({
+        user_id: config.userId,
+        ticker,
+        name,
+      });
+      setEntries((prev) => [created, ...prev]);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -94,18 +101,11 @@ export default function SedarWatchlist({ pluginConfig }) {
 
   return (
     <section className="sw-root">
-      <form className="sw-search" onSubmit={handleAdd}>
-        <input
-          type="text"
-          placeholder="Add a company (e.g. ABC - Acme Mining Corp)"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Add a company by ticker or name"
-        />
-        <button type="submit" disabled={submitting || !query.trim()}>
-          {submitting ? "Adding…" : "Add"}
-        </button>
-      </form>
+      <SedarSearch
+        client={client}
+        onPick={addFromSedar}
+        onManualAdd={addManually}
+      />
 
       {error && <div className="sw-error" role="alert">{error}</div>}
 
@@ -113,15 +113,17 @@ export default function SedarWatchlist({ pluginConfig }) {
         <p className="sw-empty">Loading watchlist…</p>
       ) : entries.length === 0 ? (
         <p className="sw-empty">
-          No companies on your watchlist yet. Add one above to get started.
+          No companies on your watchlist yet. Search SEDAR+ above to add one.
         </p>
       ) : (
         <div className="sw-grid">
           {entries.map((entry) => (
             <article key={entry.id} className="sw-card">
               <div className="sw-card-header">
-                <span className="sw-card-ticker">{entry.ticker}</span>
-                <span className="sw-card-meta">{entry.exchange ?? "—"}</span>
+                <span className="sw-card-ticker">{entry.ticker ?? "—"}</span>
+                <span className="sw-card-meta">
+                  {entry.exchange ?? entry.jurisdiction ?? ""}
+                </span>
               </div>
               <div className="sw-card-name">{entry.name}</div>
               <div className="sw-card-meta">
@@ -130,6 +132,11 @@ export default function SedarWatchlist({ pluginConfig }) {
               <div className="sw-card-meta">
                 Market cap: {formatMarketCap(entry.market_cap)}
               </div>
+              {entry.sedar_profile_id && (
+                <div className="sw-card-meta">
+                  SEDAR+ id: {entry.sedar_profile_id}
+                </div>
+              )}
               <button
                 type="button"
                 className="sw-card-remove"
@@ -141,6 +148,8 @@ export default function SedarWatchlist({ pluginConfig }) {
           ))}
         </div>
       )}
+
+      <FilingsFeed client={client} />
     </section>
   );
 }

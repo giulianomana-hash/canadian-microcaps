@@ -1,8 +1,5 @@
 # Render.com blueprint - defines both services in one click.
 # Docs: https://render.com/docs/blueprint-spec
-#
-# After "New + > Blueprint" in the Render dashboard, you will be prompted to
-# fill in the values for any envVars marked `sync: false`. See DEPLOY.md.
 
 services:
   # ---------- FastAPI backend ----------
@@ -18,13 +15,21 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: SUPABASE_URL
-        sync: false           # you paste this in the Render UI
+        sync: false
       - key: SUPABASE_KEY
-        sync: false           # you paste this in the Render UI
+        sync: false
       - key: CORS_ORIGINS
-        sync: false           # paste the frontend URL after first deploy
+        sync: false
+      - key: REFRESH_SECRET
+        sync: false           # shared with the GitHub Actions cron
+      - key: RESEND_API_KEY
+        sync: false           # optional; leave blank to disable email
+      - key: RESEND_FROM
+        value: "SedarWatchlist <onboarding@resend.dev>"
+      - key: NOTIFY_EMAIL
+        sync: false           # email address to send filings notifications to
 
-  # ---------- Vite/React frontend (static site, always-on free tier) ----------
+  # ---------- Vite/React frontend (static, always-on free tier) ----------
   - type: web
     name: sedarwatchlist-web
     runtime: static
@@ -33,7 +38,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_BASE_URL
-        sync: false           # paste the backend URL after first deploy
+        sync: false
     routes:
       - type: rewrite
         source: /*

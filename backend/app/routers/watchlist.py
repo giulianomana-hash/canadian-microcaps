@@ -23,7 +23,16 @@ def list_watchlist() -> list[WatchlistEntry]:
 @router.post("", response_model=WatchlistEntry, status_code=status.HTTP_201_CREATED)
 def add_watchlist_entry(entry: WatchlistEntryCreate) -> WatchlistEntry:
     payload = entry.model_dump(exclude_none=True)
-    response = get_supabase().table(TABLE).insert(payload).execute()
+    try:
+        response = get_supabase().table(TABLE).insert(payload).execute()
+    except Exception as exc:
+        message = str(exc)
+        if "duplicate" in message.lower() or "23505" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This company is already on your watchlist.",
+            )
+        raise
     rows = response.data or []
     if not rows:
         raise HTTPException(

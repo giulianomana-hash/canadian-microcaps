@@ -25,37 +25,89 @@ body {
   color: #94a3b8;
 }
 
-.sw-search {
-  display: flex;
-  gap: 0.5rem;
+/* --- Search --- */
+.sw-search-wrap {
+  position: relative;
   margin-bottom: 1.5rem;
 }
 
-.sw-search input {
-  flex: 1;
-  padding: 0.6rem 0.75rem;
+.sw-search-input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
   border-radius: 6px;
   border: 1px solid #334155;
   background: #1e293b;
   color: inherit;
   font-size: 0.95rem;
+  box-sizing: border-box;
 }
 
-.sw-search button {
-  padding: 0.6rem 1rem;
+.sw-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0b1220;
+  border: 1px solid #334155;
   border-radius: 6px;
-  border: none;
-  background: #38bdf8;
-  color: #0f172a;
-  font-weight: 600;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sw-search-loading,
+.sw-search-empty {
+  padding: 0.75rem 1rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.sw-search-manual {
+  margin-top: 0.5rem;
+  background: transparent;
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-.sw-search button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.sw-search-manual:hover {
+  background: #38bdf8;
+  color: #0f172a;
 }
 
+.sw-search-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  color: inherit;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.sw-search-row:hover {
+  background: #1e293b;
+}
+
+.sw-search-row-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.sw-search-row-meta {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+/* --- Watchlist cards --- */
 .sw-error {
   background: #7f1d1d;
   color: #fee2e2;
@@ -122,4 +174,70 @@ body {
 .sw-card-remove:hover {
   background: #ef4444;
   color: #fff;
+}
+
+/* --- Filings feed --- */
+.sw-filings {
+  margin-top: 2.5rem;
+}
+
+.sw-filings-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.2rem;
+}
+
+.sw-filings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sw-filing-row {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sw-filing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.sw-filing-ticker {
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.sw-filing-date {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.sw-filing-type {
+  font-size: 0.95rem;
+}
+
+.sw-filing-title {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.sw-filing-link {
+  align-self: flex-start;
+  color: #38bdf8;
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.sw-filing-link:hover {
+  text-decoration: underline;
 }

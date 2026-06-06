@@ -1,0 +1,27 @@
+name: Refresh SEDAR+ filings
+
+# 9 AM and 4 PM in São Paulo / Buenos Aires (GMT-3) = 12:00 and 19:00 UTC.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+    - cron: "0 19 * * *"
+  workflow_dispatch:        # lets you trigger a manual run from the Actions tab
+
+jobs:
+  poke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/refresh
+        env:
+          API_URL: ${{ secrets.REFRESH_API_URL }}
+          SECRET:  ${{ secrets.REFRESH_SECRET }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$SECRET" ]; then
+            echo "Missing REFRESH_API_URL or REFRESH_SECRET secret." >&2
+            exit 1
+          fi
+          # Render free-tier services cold-start in ~30s. Allow up to 90s.
+          curl --fail --show-error --max-time 180 \
+               -H "Authorization: Bearer $SECRET" \
+               -H "Content-Type: application/json" \
+               -X POST "$API_URL/api/refresh"
