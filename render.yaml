@@ -1,0 +1,40 @@
+# Render.com blueprint - defines both services in one click.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# After "New + > Blueprint" in the Render dashboard, you will be prompted to
+# fill in the values for any envVars marked `sync: false`. See DEPLOY.md.
+
+services:
+  # ---------- FastAPI backend ----------
+  - type: web
+    name: sedarwatchlist-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: SUPABASE_URL
+        sync: false           # you paste this in the Render UI
+      - key: SUPABASE_KEY
+        sync: false           # you paste this in the Render UI
+      - key: CORS_ORIGINS
+        sync: false           # paste the frontend URL after first deploy
+
+  # ---------- Vite/React frontend (static site, always-on free tier) ----------
+  - type: web
+    name: sedarwatchlist-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false           # paste the backend URL after first deploy
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

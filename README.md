@@ -13,7 +13,11 @@ canadian-microcaps/
 
 The frontend ships as a self-contained plugin component (`<SedarWatchlist pluginConfig={...} />`) that can be dropped into a future shell app. It talks to the FastAPI backend over HTTP, which in turn persists data in Supabase Postgres.
 
-## Quick start
+## Deploy it (recommended)
+
+The fastest way to get a working URL is the Render blueprint — free tier, no credit card. See **[DEPLOY.md](./DEPLOY.md)** for a step-by-step walkthrough (~10 min).
+
+## Quick start (local dev)
 
 ### 1. Database
 

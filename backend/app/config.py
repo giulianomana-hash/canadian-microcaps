@@ -9,11 +9,16 @@ load_dotenv()
 class Settings:
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_key: str = os.getenv("SUPABASE_KEY", "")
-    cors_origins: list[str] = [
-        origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
-        if origin.strip()
-    ]
+    cors_origins_raw: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]
+
+    @property
+    def cors_allow_credentials(self) -> bool:
+        # The CORS spec forbids credentials with a wildcard origin.
+        return self.cors_origins != ["*"]
 
 
 @lru_cache

@@ -1,7 +1,11 @@
 import SedarWatchlist from "./components/SedarWatchlist.jsx";
 
+const apiBaseUrl =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://localhost:8000" : window.location.origin);
+
 const pluginConfig = {
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+  apiBaseUrl,
   userId: "demo-user",
   marketCapCeiling: 50_000_000,
 };
