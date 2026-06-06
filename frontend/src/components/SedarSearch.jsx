@@ -24,8 +24,14 @@ export default function SedarSearch({ client, onPick, onManualAdd }) {
         setResults(hits);
         setOpen(true);
       } catch (err) {
-        setError(err.message);
+        const message = err.message ?? "";
+        if (message.startsWith("503")) {
+          setError("SEDAR+ is in scheduled maintenance. Search will resume once they're back online.");
+        } else {
+          setError(message);
+        }
         setResults([]);
+        setOpen(true);
       } finally {
         setLoading(false);
       }

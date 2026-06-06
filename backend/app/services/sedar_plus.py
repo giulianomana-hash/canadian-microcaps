@@ -22,6 +22,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+class SedarMaintenanceError(RuntimeError):
+    """Raised when SEDAR+ responds with its maintenance page."""
+
+
 BASE_URL = "https://www.sedarplus.ca"
 USER_AGENT = (
     "SedarWatchlist/0.1 (+https://github.com/giulianomana-hash/canadian-microcaps) "
@@ -126,7 +130,11 @@ async def search_companies(query: str, limit: int = 15) -> list[CompanyHit]:
         async with _client() as client:
             resp = await client.post(SEARCH_PATH, json=body)
             resp.raise_for_status()
+            if "maintenance" in (resp.text[:2000].lower()) and "sedar" in (resp.text[:2000].lower()):
+                raise SedarMaintenanceError("SEDAR+ is in maintenance mode.")
             data = resp.json()
+    except SedarMaintenanceError:
+        raise
     except Exception as exc:
         logger.warning("SEDAR+ search failed for %r: %s", q, exc)
         return []

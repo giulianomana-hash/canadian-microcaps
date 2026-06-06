@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from ..schemas import CompanySearchResult
 from ..services import sedar_plus
@@ -11,7 +11,13 @@ async def search(
     q: str = Query(..., min_length=2, description="Company name or ticker fragment."),
     limit: int = Query(default=15, ge=1, le=50),
 ) -> list[CompanySearchResult]:
-    hits = await sedar_plus.search_companies(q, limit=limit)
+    try:
+        hits = await sedar_plus.search_companies(q, limit=limit)
+    except sedar_plus.SedarMaintenanceError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SEDAR+ is currently in scheduled maintenance. Try again later.",
+        )
     return [CompanySearchResult(**hit.to_dict()) for hit in hits]
 
 
