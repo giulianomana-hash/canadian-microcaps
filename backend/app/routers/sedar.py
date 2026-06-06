@@ -13,3 +13,13 @@ async def search(
 ) -> list[CompanySearchResult]:
     hits = await sedar_plus.search_companies(q, limit=limit)
     return [CompanySearchResult(**hit.to_dict()) for hit in hits]
+
+
+@router.get("/diagnose")
+async def diagnose(q: str = Query(default="shopify")) -> dict:
+    """Probe several candidate SEDAR+ endpoints and report what each returns.
+
+    Public route, intentionally no auth — only returns external HTTP metadata
+    plus a short preview of the body so we can identify the right endpoint.
+    """
+    return await sedar_plus.diagnose(q)

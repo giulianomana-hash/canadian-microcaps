@@ -225,3 +225,44 @@ async def list_filings_for_many(
             await asyncio.sleep(delay_seconds)
         out[pid] = await list_filings(pid, limit=per_company_limit)
     return out
+
+
+# ---------- diagnostics ----------
+
+_DIAG_CANDIDATES = [
+    # (label, method, path, payload-or-querystring)
+    ("post_CommonSearch_getSearchResults", "POST", "/csa-party/service/CommonSearch/getSearchResults",
+     {"searchText": "{q}", "type": "ALL", "pageNumber": 1, "pageSize": 5}),
+    ("post_CommonSearch_PARTY", "POST", "/csa-party/service/CommonSearch/getSearchResults",
+     {"searchText": "{q}", "type": "PARTY", "pageNumber": 1, "pageSize": 5}),
+    ("get_csa-party_search", "GET", "/csa-party/search/?q={q}", None),
+    ("get_landingpage_party", "GET", "/landingpage/party/?searchText={q}", None),
+    ("post_party_search", "POST", "/csa-party/service/Party/search",
+     {"searchText": "{q}", "pageNumber": 1, "pageSize": 5}),
+    ("get_party_v1_search", "GET", "/api/v1/party/search?q={q}", None),
+    ("get_root_search", "GET", "/?searchText={q}", None),
+]
+
+
+async def diagnose(query: str = "shopify") -> dict:
+    """Hit each candidate endpoint once and report status + a body preview."""
+    out: dict = {"query": query, "candidates": []}
+    async with _client() as client:
+        for label, method, path, payload in _DIAG_CANDIDATES:
+            entry: dict = {"label": label, "method": method, "path": path}
+            try:
+                if method == "POST":
+                    body = {k: (v.replace("{q}", query) if isinstance(v, str) else v) for k, v in (payload or {}).items()}
+                    resp = await client.post(path, json=body)
+                    entry["request_body"] = body
+                else:
+                    resp = await client.get(path.replace("{q}", query))
+                entry["status"] = resp.status_code
+                entry["content_type"] = resp.headers.get("content-type")
+                text = resp.text or ""
+                entry["body_preview"] = text[:600]
+                entry["body_length"] = len(text)
+            except Exception as exc:
+                entry["error"] = f"{type(exc).__name__}: {exc}"
+            out["candidates"].append(entry)
+    return out
