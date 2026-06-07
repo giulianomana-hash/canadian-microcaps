@@ -41,6 +41,25 @@ USER_AGENT = (
 BETWEEN_COMPANIES_MS = 2_500
 ARTIFACT_DIR = Path("artifacts")
 
+# Minimal stealth: patch the JS surfaces Imperva and similar bot
+# detectors check for. Equivalent to the cheap part of playwright-stealth,
+# done inline to avoid the dependency.
+STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['en-CA', 'en'] });
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5].map(i => ({ name: 'Plugin ' + i }))
+});
+window.chrome = window.chrome || { runtime: {} };
+const origQuery = navigator.permissions && navigator.permissions.query;
+if (origQuery) {
+    navigator.permissions.query = (params) =>
+        params && params.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : origQuery(params);
+}
+"""
+
 
 # ---------- backend I/O ----------
 
@@ -131,15 +150,30 @@ async def run(playwright: Playwright) -> int:
         return 0
 
     browser = await playwright.chromium.launch(
-        headless=True, args=["--disable-blink-features=AutomationControlled"]
+        headless=True,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=IsolateOrigins,site-per-process",
+        ],
     )
     context = await browser.new_context(
         user_agent=USER_AGENT,
         viewport={"width": 1366, "height": 900},
         locale="en-CA",
         timezone_id="America/Toronto",
+        # A realistic Accept-Language matters for Imperva.
+        extra_http_headers={"Accept-Language": "en-CA,en;q=0.9"},
     )
+    await context.add_init_script(STEALTH_JS)
     page = await context.new_page()
+
+    # Warm up: hit SEDAR+ homepage once so we have cookies before searching.
+    try:
+        await page.goto("https://www.sedarplus.ca/landingpage/", timeout=45_000)
+        await page.wait_for_timeout(5_000)
+        LOG.info("SEDAR+ homepage warmup complete")
+    except Exception as exc:
+        LOG.warning("SEDAR+ warmup failed: %s", exc)
 
     all_filings: list[dict] = []
     discovered: list[dict] = []
