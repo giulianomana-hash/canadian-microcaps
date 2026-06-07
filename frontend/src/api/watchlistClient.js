@@ -39,6 +39,6 @@ export function createWatchlistClient({ apiBaseUrl }) {
       }),
     listFilings: () => request("/api/filings"),
     searchCompanies: (q) =>
-      request(`/api/sedar/search?q=${encodeURIComponent(q)}`),
+      request(`/api/search?q=${encodeURIComponent(q)}`),
   };
 }

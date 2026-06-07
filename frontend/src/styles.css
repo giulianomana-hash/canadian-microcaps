@@ -25,86 +25,103 @@ body {
   color: #94a3b8;
 }
 
-/* --- Add company form --- */
-.sw-add-form {
+/* --- Search --- */
+.sw-search-wrap {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.sw-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #334155;
   background: #1e293b;
+  color: inherit;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.sw-search-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.sw-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #0b1220;
   border: 1px solid #334155;
   border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
+  max-height: 360px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
-.sw-add-row {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.sw-add-row input {
-  flex: 1 1 160px;
-  min-width: 0;
-  padding: 0.6rem 0.75rem;
-  border-radius: 6px;
-  border: 1px solid #334155;
-  background: #0f172a;
-  color: inherit;
+.sw-search-loading,
+.sw-search-empty {
+  padding: 0.8rem 1rem;
+  color: #94a3b8;
   font-size: 0.9rem;
 }
 
-.sw-add-row input.sw-add-url {
-  flex: 2 1 280px;
-}
-
-.sw-add-row button {
-  padding: 0.55rem 1.1rem;
-  border-radius: 6px;
+.sw-search-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  background: transparent;
   border: none;
-  background: #38bdf8;
-  color: #0f172a;
-  font-weight: 600;
+  border-bottom: 1px solid #1e293b;
+  color: inherit;
+  padding: 0.7rem 1rem;
   cursor: pointer;
 }
 
-.sw-add-row button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.sw-search-row:hover:not(:disabled) {
+  background: #1e293b;
 }
 
-.sw-add-help {
-  align-self: center;
+.sw-search-row:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.sw-search-row-name {
+  font-weight: 500;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.sw-search-row-ticker {
+  font-weight: 700;
   color: #38bdf8;
-  text-decoration: none;
-  font-size: 0.85rem;
-  padding: 0 0.25rem;
+  font-size: 0.9rem;
 }
 
-.sw-add-help:hover {
-  text-decoration: underline;
-}
-
-.sw-add-hint {
-  margin: 0;
+.sw-search-row-meta {
   color: #94a3b8;
   font-size: 0.8rem;
-  line-height: 1.4;
+  margin-top: 0.2rem;
 }
 
+/* --- Card-level helpers --- */
 .sw-card-link {
   color: #38bdf8;
   text-decoration: none;
-  font-size: 0.8rem;
 }
 
 .sw-card-link:hover {
   text-decoration: underline;
 }
 
-.sw-card-warn {
+.sw-card-pending {
   color: #fbbf24;
-  font-size: 0.75rem;
   font-style: italic;
 }
 

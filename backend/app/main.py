@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import filings, refresh, watchlist
+from .routers import filings, refresh, search, watchlist
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,6 +26,7 @@ app.add_middleware(
 
 app.include_router(watchlist.router)
 app.include_router(filings.router)
+app.include_router(search.router)
 app.include_router(refresh.router)
 
 

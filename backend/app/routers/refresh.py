@@ -44,6 +44,17 @@ async def ingest_filings(
     _check_auth(authorization)
 
     sb = get_supabase()
+
+    # Cache any newly-discovered SEDAR+ URLs back onto the watchlist rows
+    # so the next scrape goes straight to filings.
+    for disc in payload.discovered_urls:
+        try:
+            sb.table("watchlist").update(
+                {"sedar_profile_url": disc.sedar_profile_url}
+            ).eq("id", disc.watchlist_id).execute()
+        except Exception as exc:
+            logger.warning("Failed to cache SEDAR URL for %s: %s", disc.watchlist_id, exc)
+
     received = len(payload.filings)
     if received == 0:
         return IngestSummary(received=0, inserted=0, email_sent=False)
@@ -106,31 +117,29 @@ async def ingest_filings(
 
 @router.get("/scrape-targets")
 def scrape_targets(authorization: str | None = Header(default=None)) -> list[dict]:
-    """Return one row per watched company that has a SEDAR+ URL or id, so the
-    Playwright job knows what to scrape. Auth'd by REFRESH_SECRET.
+    """Every watched company the Playwright scraper should visit.
+
+    Rows without a cached `sedar_profile_url` are still returned — the
+    scraper does an on-SEDAR+ search by name to discover the URL on its
+    first encounter, then POSTs the URL back via /api/filings/ingest so
+    we cache it for future runs.
     """
     _check_auth(authorization)
     sb = get_supabase()
     resp = (
         sb.table("watchlist")
-        .select("sedar_profile_id, sedar_profile_url, ticker, name")
+        .select("id, sedar_profile_id, sedar_profile_url, ticker, name")
         .execute()
     )
     out = []
-    seen = set()
     for row in resp.data or []:
-        url = (row.get("sedar_profile_url") or "").strip()
-        pid = (row.get("sedar_profile_id") or "").strip()
-        if not url and not pid:
+        if not row.get("name"):
             continue
-        key = url or pid
-        if key in seen:
-            continue
-        seen.add(key)
         out.append(
             {
-                "sedar_profile_id": pid or None,
-                "sedar_profile_url": url or None,
+                "id": row["id"],
+                "sedar_profile_id": row.get("sedar_profile_id"),
+                "sedar_profile_url": row.get("sedar_profile_url"),
                 "ticker": row.get("ticker"),
                 "name": row.get("name"),
             }

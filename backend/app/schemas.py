@@ -61,8 +61,14 @@ class FilingIngest(BaseModel):
     source: str = "sedar_plus"
 
 
+class DiscoveredSedarUrl(BaseModel):
+    watchlist_id: str
+    sedar_profile_url: str
+
+
 class FilingsIngestPayload(BaseModel):
-    filings: list[FilingIngest]
+    filings: list[FilingIngest] = []
+    discovered_urls: list[DiscoveredSedarUrl] = []
 
 
 class IngestSummary(BaseModel):

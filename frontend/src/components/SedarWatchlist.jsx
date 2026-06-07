@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWatchlistClient } from "../api/watchlistClient.js";
-import AddCompanyForm from "./AddCompanyForm.jsx";
+import CompanySearch from "./CompanySearch.jsx";
 import FilingsFeed from "./FilingsFeed.jsx";
 
 const DEFAULT_CONFIG = {
@@ -8,13 +8,6 @@ const DEFAULT_CONFIG = {
   userId: "demo-user",
   marketCapCeiling: 50_000_000,
 };
-
-function formatMarketCap(value) {
-  if (value == null) return "—";
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value}`;
-}
 
 export default function SedarWatchlist({ pluginConfig }) {
   const config = useMemo(
@@ -48,10 +41,14 @@ export default function SedarWatchlist({ pluginConfig }) {
     refresh();
   }, [refresh]);
 
-  const handleAdd = async (entry) => {
+  const handlePick = async (hit) => {
+    setError(null);
     const created = await client.addWatchlistEntry({
       user_id: config.userId,
-      ...entry,
+      ticker: hit.ticker,
+      name: hit.name,
+      exchange: hit.exchange ?? null,
+      sector: hit.sector ?? null,
     });
     setEntries((prev) => [created, ...prev]);
   };
@@ -70,7 +67,7 @@ export default function SedarWatchlist({ pluginConfig }) {
 
   return (
     <section className="sw-root">
-      <AddCompanyForm onAdd={handleAdd} />
+      <CompanySearch client={client} onPick={handlePick} />
 
       {error && <div className="sw-error" role="alert">{error}</div>}
 
@@ -78,7 +75,7 @@ export default function SedarWatchlist({ pluginConfig }) {
         <p className="sw-empty">Loading watchlist…</p>
       ) : entries.length === 0 ? (
         <p className="sw-empty">
-          No companies on your watchlist yet. Add one above to get started.
+          No companies on your watchlist yet. Search above to add one.
         </p>
       ) : (
         <div className="sw-grid">
@@ -86,31 +83,29 @@ export default function SedarWatchlist({ pluginConfig }) {
             <article key={entry.id} className="sw-card">
               <div className="sw-card-header">
                 <span className="sw-card-ticker">{entry.ticker ?? "—"}</span>
-                <span className="sw-card-meta">
-                  {entry.exchange ?? entry.jurisdiction ?? ""}
-                </span>
+                <span className="sw-card-meta">{entry.exchange ?? ""}</span>
               </div>
               <div className="sw-card-name">{entry.name}</div>
-              <div className="sw-card-meta">
-                Sector: {entry.sector ?? "Unclassified"}
-              </div>
-              <div className="sw-card-meta">
-                Market cap: {formatMarketCap(entry.market_cap)}
-              </div>
-              {entry.sedar_profile_url ? (
-                <a
-                  className="sw-card-link"
-                  href={entry.sedar_profile_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  SEDAR+ profile ↗
-                </a>
-              ) : (
-                <div className="sw-card-warn">
-                  No SEDAR+ URL — not polled for filings
-                </div>
+              {entry.sector && (
+                <div className="sw-card-meta">Sector: {entry.sector}</div>
               )}
+              <div className="sw-card-meta">
+                Filings:{" "}
+                {entry.sedar_profile_url ? (
+                  <a
+                    href={entry.sedar_profile_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="sw-card-link"
+                  >
+                    on SEDAR+ ↗
+                  </a>
+                ) : (
+                  <span className="sw-card-pending">
+                    SEDAR+ lookup pending (next scrape)
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 className="sw-card-remove"

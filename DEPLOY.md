@@ -113,15 +113,17 @@ The next time the refresh job runs and finds new filings, you'll get an email at
 | Scraper job (manual) | GitHub → Actions → Scrape SEDAR+ filings → Run workflow | Job completes with `Backend response: {...}` |
 | Frontend | `https://sedarwatchlist-web.onrender.com` | UI loads, add-company form visible |
 
-## Adding a company that gets filings polled
+## Adding a company
 
-Live search against SEDAR+ is blocked by their Imperva bot wall, so you give the scraper the SEDAR+ URL directly:
+Type the company name (or ticker) in the search bar. Matches come from Yahoo Finance, filtered to Canadian listings (TSX / TSXV / CSE / NEO). Click one → it's on your watchlist.
 
-1. Click **Find on SEDAR+ ↗** in the app — opens https://www.sedarplus.ca/csa-party/search/ in a new tab.
-2. Search the company there, click into its profile page.
-3. Copy the URL from your browser's address bar.
-4. Back in the app, paste it into the **SEDAR+ company profile URL** field, fill in name (and ticker if you want), click **Add**.
-5. The twice-daily scraper will visit that URL on each run and ingest any new filings.
+The first scraper run after adding will:
+
+1. Search SEDAR+ for the company name (via Playwright + real Chromium),
+2. Pick the best match, cache its profile URL on your watchlist row,
+3. Open that page and ingest any filings it finds.
+
+Until the first run completes the card shows "SEDAR+ lookup pending"; afterward it shows a direct link to the SEDAR+ profile.
 
 ---
 
