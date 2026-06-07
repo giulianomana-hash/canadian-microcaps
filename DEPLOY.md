@@ -4,6 +4,10 @@ End result: a public URL like `https://sedarwatchlist-web.onrender.com` that run
 
 Total time: ~15 minutes. Everything below is free.
 
+## Architecture (why it's split this way)
+
+SEDAR+ is fronted by Imperva, which blocks server-to-server requests from cloud IPs like Render's. So the heavy work happens in **GitHub Actions** — a free runner spins up Chromium via Playwright, navigates SEDAR+ as a real browser (passing Imperva's JS challenge), parses the filings out of each company's profile page, then POSTs the results back to the backend on Render. Render's job is just to serve the UI, store data, send the email, and tell the scraper which companies to visit.
+
 ---
 
 ## Accounts you need
@@ -64,15 +68,16 @@ Open the frontend URL — you should see the search bar.
 
 ---
 
-## Step 4 — GitHub Actions: schedule the twice-daily refresh
+## Step 4 — GitHub Actions: schedule the twice-daily scraper
 
-The repo already contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 UTC and 19:00 UTC (= 09:00 and 16:00 in GMT-3).
+The repo contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 UTC and 19:00 UTC (= 09:00 and 16:00 in GMT-3). It installs Playwright + Chromium, scrapes every watched SEDAR+ profile page, and POSTs the result to your backend.
 
 1. GitHub → your `canadian-microcaps` repo → **Settings → Secrets and variables → Actions → New repository secret**
 2. Add two secrets:
    - `REFRESH_API_URL` → your backend URL, e.g. `https://sedarwatchlist-api.onrender.com`
    - `REFRESH_SECRET` → the same long random string you set on Render
-3. **Actions tab → Refresh SEDAR+ filings → Run workflow** (manual trigger) to test it. Watch the job log — should end with a JSON response like `{"companies_checked":N,"new_filings":M,"email_sent":true|false}`.
+3. **Actions tab → Scrape SEDAR+ filings → Run workflow** (manual trigger) to test it. The job takes ~3–5 minutes (most of that is installing Chromium). Look at the log for a line like `Backend response: {'received': N, 'inserted': M, 'email_sent': true|false}`.
+4. Every job uploads the rendered HTML of each company page as an artifact named `sedar-html`. If parsing returns zero rows for a company you expected, download the artifact from the Actions run page and we can fix the parser without touching the workflow.
 
 From now on it'll fire twice a day automatically.
 
@@ -104,10 +109,19 @@ The next time the refresh job runs and finds new filings, you'll get an email at
 |---|---|---|
 | Backend alive | `https://sedarwatchlist-api.onrender.com/health` | `{"status":"ok"}` |
 | Watchlist works | `https://sedarwatchlist-api.onrender.com/api/watchlist` | `[]` or your rows |
-| SEDAR search works | `https://sedarwatchlist-api.onrender.com/api/sedar/search?q=shopify` | array of matches |
-| Filings feed works | `https://sedarwatchlist-api.onrender.com/api/filings` | `[]` until refresh runs |
-| Refresh job (manual) | GitHub → Actions → Run workflow | Job completes with summary JSON |
-| Frontend | `https://sedarwatchlist-web.onrender.com` | UI loads, search returns SEDAR+ hits |
+| Filings feed works | `https://sedarwatchlist-api.onrender.com/api/filings` | `[]` until first scrape lands |
+| Scraper job (manual) | GitHub → Actions → Scrape SEDAR+ filings → Run workflow | Job completes with `Backend response: {...}` |
+| Frontend | `https://sedarwatchlist-web.onrender.com` | UI loads, add-company form visible |
+
+## Adding a company that gets filings polled
+
+Live search against SEDAR+ is blocked by their Imperva bot wall, so you give the scraper the SEDAR+ URL directly:
+
+1. Click **Find on SEDAR+ ↗** in the app — opens https://www.sedarplus.ca/csa-party/search/ in a new tab.
+2. Search the company there, click into its profile page.
+3. Copy the URL from your browser's address bar.
+4. Back in the app, paste it into the **SEDAR+ company profile URL** field, fill in name (and ticker if you want), click **Add**.
+5. The twice-daily scraper will visit that URL on each run and ingest any new filings.
 
 ---
 
@@ -124,10 +138,10 @@ The next time the refresh job runs and finds new filings, you'll get an email at
 
 | Symptom | Likely cause |
 |---|---|
-| `/api/sedar/search` returns `[]` for known names | SEDAR+ may have changed their internal endpoints — paste the Render logs and I'll patch `backend/app/services/sedar_plus.py` |
-| Refresh job returns `new_filings: 0` forever | Same as above — the filings endpoint in `sedar_plus.py` may need adjustment |
-| `companies_checked: 0` | None of your watchlist entries have a `sedar_profile_id` (you added them via the manual fallback). Re-add via SEDAR+ search to enable polling. |
-| Email never arrives | Check spam; verify `RESEND_API_KEY` and `NOTIFY_EMAIL` in Render env; check Resend's dashboard for delivery logs |
-| Generic 500 on any endpoint | Render logs always have the stack trace |
+| Scraper run says "Got 0 scrape target(s)" | None of your watchlist entries have a SEDAR+ profile URL. Add one via the form. |
+| Scraper run says "parsed 0 filings" for a company you know has filings | Imperva served us a challenge page or the DOM differs from what the parser expects. Download the `sedar-html` artifact from the Actions run and send it to me — the parser in `scripts/scrape_sedar.py` is a one-file fix. |
+| Email never arrives | Check spam; verify `RESEND_API_KEY` and `NOTIFY_EMAIL` in Render env; Resend dashboard shows delivery logs. |
+| `/api/filings/ingest` returns 401 | `REFRESH_SECRET` value on Render doesn't match GitHub secret. |
+| Generic 500 on any endpoint | Render logs always have the stack trace. |
 
 Paste any error message back to me and I'll debug it.

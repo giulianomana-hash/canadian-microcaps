@@ -25,86 +25,87 @@ body {
   color: #94a3b8;
 }
 
-/* --- Search --- */
-.sw-search-wrap {
-  position: relative;
-  margin-bottom: 1.5rem;
-}
-
-.sw-search-input {
-  width: 100%;
-  padding: 0.7rem 0.9rem;
-  border-radius: 6px;
-  border: 1px solid #334155;
+/* --- Add company form --- */
+.sw-add-form {
   background: #1e293b;
-  color: inherit;
-  font-size: 0.95rem;
-  box-sizing: border-box;
-}
-
-.sw-search-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: #0b1220;
   border: 1px solid #334155;
-  border-radius: 6px;
-  max-height: 320px;
-  overflow-y: auto;
-  z-index: 10;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-.sw-search-loading,
-.sw-search-empty {
-  padding: 0.75rem 1rem;
-  color: #94a3b8;
+.sw-add-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sw-add-row input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: inherit;
   font-size: 0.9rem;
 }
 
-.sw-search-manual {
-  margin-top: 0.5rem;
-  background: transparent;
-  border: 1px solid #38bdf8;
-  color: #38bdf8;
-  padding: 0.4rem 0.75rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  cursor: pointer;
+.sw-add-row input.sw-add-url {
+  flex: 2 1 280px;
 }
 
-.sw-search-manual:hover {
+.sw-add-row button {
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px;
+  border: none;
   background: #38bdf8;
   color: #0f172a;
-}
-
-.sw-search-row {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid #1e293b;
-  color: inherit;
-  padding: 0.65rem 1rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.sw-search-row:hover {
-  background: #1e293b;
+.sw-add-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-.sw-search-row-name {
-  font-weight: 600;
-  font-size: 0.95rem;
+.sw-add-help {
+  align-self: center;
+  color: #38bdf8;
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: 0 0.25rem;
 }
 
-.sw-search-row-meta {
+.sw-add-help:hover {
+  text-decoration: underline;
+}
+
+.sw-add-hint {
+  margin: 0;
   color: #94a3b8;
   font-size: 0.8rem;
-  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+.sw-card-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.sw-card-link:hover {
+  text-decoration: underline;
+}
+
+.sw-card-warn {
+  color: #fbbf24;
+  font-size: 0.75rem;
+  font-style: italic;
 }
 
 /* --- Watchlist cards --- */

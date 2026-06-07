@@ -1,4 +1,4 @@
-name: Refresh SEDAR+ filings
+name: Scrape SEDAR+ filings
 
 # 9 AM and 4 PM in São Paulo / Buenos Aires (GMT-3) = 12:00 and 19:00 UTC.
 on:
@@ -8,20 +8,42 @@ on:
   workflow_dispatch:        # lets you trigger a manual run from the Actions tab
 
 jobs:
-  poke:
+  scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BACKEND_URL: ${{ secrets.REFRESH_API_URL }}
+      REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
     steps:
-      - name: Call /api/refresh
-        env:
-          API_URL: ${{ secrets.REFRESH_API_URL }}
-          SECRET:  ${{ secrets.REFRESH_SECRET }}
+      - uses: actions/checkout@v4
+
+      - name: Sanity check secrets
         run: |
-          if [ -z "$API_URL" ] || [ -z "$SECRET" ]; then
+          if [ -z "$BACKEND_URL" ] || [ -z "$REFRESH_SECRET" ]; then
             echo "Missing REFRESH_API_URL or REFRESH_SECRET secret." >&2
             exit 1
           fi
-          # Render free-tier services cold-start in ~30s. Allow up to 90s.
-          curl --fail --show-error --max-time 180 \
-               -H "Authorization: Bearer $SECRET" \
-               -H "Content-Type: application/json" \
-               -X POST "$API_URL/api/refresh"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install Python deps
+        run: pip install -r scripts/requirements.txt
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run scraper
+        run: python scripts/scrape_sedar.py
+
+      - name: Upload rendered HTML (for parser debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sedar-html
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

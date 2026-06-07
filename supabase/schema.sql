@@ -17,8 +17,9 @@ create table if not exists public.watchlist (
 );
 
 alter table public.watchlist
-    add column if not exists sedar_profile_id text,
-    add column if not exists jurisdiction     text;
+    add column if not exists sedar_profile_id  text,
+    add column if not exists sedar_profile_url text,
+    add column if not exists jurisdiction      text;
 
 -- Allow ticker to be null (SEDAR has issuers without an exchange-listed ticker).
 alter table public.watchlist alter column ticker drop not null;
@@ -45,7 +46,8 @@ create table if not exists public.filings (
 alter table public.filings
     add column if not exists sedar_profile_id text,
     add column if not exists sedar_filing_id  text,
-    add column if not exists title            text;
+    add column if not exists title            text,
+    add column if not exists source           text default 'sedar_plus';
 
 alter table public.filings alter column ticker drop not null;
 

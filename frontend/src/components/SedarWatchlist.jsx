@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createWatchlistClient } from "../api/watchlistClient.js";
-import SedarSearch from "./SedarSearch.jsx";
+import AddCompanyForm from "./AddCompanyForm.jsx";
 import FilingsFeed from "./FilingsFeed.jsx";
 
 const DEFAULT_CONFIG = {
@@ -48,43 +48,12 @@ export default function SedarWatchlist({ pluginConfig }) {
     refresh();
   }, [refresh]);
 
-  const addFromSedar = async (hit) => {
-    setError(null);
-    try {
-      const created = await client.addWatchlistEntry({
-        user_id: config.userId,
-        sedar_profile_id: hit.sedar_profile_id,
-        name: hit.name,
-        ticker: hit.ticker ?? null,
-        exchange: hit.exchange ?? null,
-        jurisdiction: hit.jurisdiction ?? null,
-      });
-      setEntries((prev) => [created, ...prev]);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const addManually = async (rawQuery) => {
-    const trimmed = (rawQuery ?? "").trim();
-    if (!trimmed) return;
-    setError(null);
-    // Convention: "TICKER - Company Name" or just a name.
-    const [first, ...rest] = trimmed.split(/[-–:]/);
-    const head = first.trim();
-    const tail = rest.join(" ").trim();
-    const ticker = tail ? head.toUpperCase() : null;
-    const name = tail || head;
-    try {
-      const created = await client.addWatchlistEntry({
-        user_id: config.userId,
-        ticker,
-        name,
-      });
-      setEntries((prev) => [created, ...prev]);
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleAdd = async (entry) => {
+    const created = await client.addWatchlistEntry({
+      user_id: config.userId,
+      ...entry,
+    });
+    setEntries((prev) => [created, ...prev]);
   };
 
   const handleRemove = async (id) => {
@@ -101,11 +70,7 @@ export default function SedarWatchlist({ pluginConfig }) {
 
   return (
     <section className="sw-root">
-      <SedarSearch
-        client={client}
-        onPick={addFromSedar}
-        onManualAdd={addManually}
-      />
+      <AddCompanyForm onAdd={handleAdd} />
 
       {error && <div className="sw-error" role="alert">{error}</div>}
 
@@ -113,7 +78,7 @@ export default function SedarWatchlist({ pluginConfig }) {
         <p className="sw-empty">Loading watchlist…</p>
       ) : entries.length === 0 ? (
         <p className="sw-empty">
-          No companies on your watchlist yet. Search SEDAR+ above to add one.
+          No companies on your watchlist yet. Add one above to get started.
         </p>
       ) : (
         <div className="sw-grid">
@@ -132,9 +97,18 @@ export default function SedarWatchlist({ pluginConfig }) {
               <div className="sw-card-meta">
                 Market cap: {formatMarketCap(entry.market_cap)}
               </div>
-              {entry.sedar_profile_id && (
-                <div className="sw-card-meta">
-                  SEDAR+ id: {entry.sedar_profile_id}
+              {entry.sedar_profile_url ? (
+                <a
+                  className="sw-card-link"
+                  href={entry.sedar_profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  SEDAR+ profile ↗
+                </a>
+              ) : (
+                <div className="sw-card-warn">
+                  No SEDAR+ URL — not polled for filings
                 </div>
               )}
               <button
