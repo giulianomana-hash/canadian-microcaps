@@ -4,10 +4,11 @@ Designed to run on a self-hosted GitHub Actions runner (your home Mac).
 Real consumer ISPs pass through Imperva; cloud datacenter IPs don't.
 
 Per company on each run:
-  1. TMX Money news page (free, fast).
-  2. SEDAR+ profile page (free from a residential IP). Profile URL is
-     auto-discovered via SEDAR's own search the first time we see a
-     company, then cached on the watchlist row for subsequent runs.
+  1. SEDAR+ profile page — only if a profile URL is already cached on the
+     watchlist row. Set the URL via the web UI (paste from your browser).
+     Discovery via the SEDAR+ search box is disabled: SEDAR blocks the
+     landing page when accessed programmatically.
+  2. TMX Money news page (free, fast, no anti-bot).
   3. POST results to /api/filings/ingest — backend dedupes, inserts,
      emails via Resend.
 
@@ -41,9 +42,6 @@ USER_AGENT = (
 BETWEEN_COMPANIES_MS = 2_500
 ARTIFACT_DIR = Path("artifacts")
 
-# Minimal stealth: patch the JS surfaces Imperva and similar bot
-# detectors check for. Equivalent to the cheap part of playwright-stealth,
-# done inline to avoid the dependency.
 STEALTH_JS = """
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 Object.defineProperty(navigator, 'languages', { get: () => ['en-CA', 'en'] });
@@ -113,32 +111,26 @@ async def run_tmx(page: Page, target: dict) -> list[dict]:
     return rows
 
 
-async def run_sedar(page: Page, target: dict) -> tuple[list[dict], dict | None]:
-    """Returns (filings, discovered_url_record_or_None)."""
-    name = target.get("name") or ""
+async def run_sedar(page: Page, target: dict) -> list[dict]:
+    """Fetch filings from a cached SEDAR+ profile URL.
+
+    Returns an empty list (and logs a warning) if no URL is cached.
+    Users set the URL via the web UI by pasting it from their browser.
+    """
+    name = target.get("name") or target.get("ticker") or "?"
     ticker = target.get("ticker")
     profile_url = target.get("sedar_profile_url")
-    discovered: dict | None = None
 
     if not profile_url:
-        LOG.info("SEDAR+: no cached URL for %r — discovering", name)
-        shot = str(ARTIFACT_DIR / f"sedar_search_{_slug(name)}.png")
-        profile_url, search_html = await sedar_plus.discover_profile_url(
-            page, name, screenshot_path=shot
-        )
-        _save_html(f"sedar_search_{_slug(name)}", search_html)
-        if profile_url:
-            discovered = {"watchlist_id": target["id"], "sedar_profile_url": profile_url}
-
-    if not profile_url:
-        return [], None
+        LOG.info("SEDAR+: skipping %r — no profile URL set (add via web UI)", name)
+        return []
 
     rows, profile_html = await sedar_plus.fetch_filings(page, profile_url)
     _save_html(f"sedar_profile_{_slug(name)}", profile_html)
     for r in rows:
         r["ticker"] = ticker
         r["sedar_profile_id"] = target.get("sedar_profile_id")
-    return rows, discovered
+    return rows
 
 
 # ---------- main ----------
@@ -156,10 +148,6 @@ async def run(playwright: Playwright) -> int:
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
     ]
-    # Run Chrome non-headless. Headless Chrome has subtle differences
-    # (WebGL, AudioContext) that Imperva uses to fingerprint automation.
-    # Your runner is a LaunchAgent in the user Aqua session, so it has
-    # GUI access — Chrome windows will briefly pop up during a scrape.
     headless = os.environ.get("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
     try:
         browser = await playwright.chromium.launch(
@@ -174,22 +162,12 @@ async def run(playwright: Playwright) -> int:
         viewport={"width": 1366, "height": 900},
         locale="en-CA",
         timezone_id="America/Toronto",
-        # A realistic Accept-Language matters for Imperva.
         extra_http_headers={"Accept-Language": "en-CA,en;q=0.9"},
     )
     await context.add_init_script(STEALTH_JS)
     page = await context.new_page()
 
-    # Warm up: hit SEDAR+ homepage once so we have cookies before searching.
-    try:
-        await page.goto("https://www.sedarplus.ca/landingpage/", timeout=45_000)
-        await page.wait_for_timeout(5_000)
-        LOG.info("SEDAR+ homepage warmup complete")
-    except Exception as exc:
-        LOG.warning("SEDAR+ warmup failed: %s", exc)
-
     all_filings: list[dict] = []
-    discovered: list[dict] = []
 
     try:
         for i, target in enumerate(targets):
@@ -197,35 +175,36 @@ async def run(playwright: Playwright) -> int:
                 await page.wait_for_timeout(BETWEEN_COMPANIES_MS)
             name = target.get("name") or target.get("ticker") or "?"
             LOG.info("---- %s ----", name)
+            # SEDAR first: navigate to the profile page directly (no search UI).
+            # This avoids the landing-page block that SEDAR+ applies to
+            # automated sessions that arrive from a different domain.
+            try:
+                sedar_rows = await run_sedar(page, target)
+                all_filings.extend(sedar_rows)
+            except Exception:
+                LOG.exception("SEDAR scrape failed for %s", name)
+            # TMX second.
             try:
                 tmx_rows = await run_tmx(page, target)
                 all_filings.extend(tmx_rows)
             except Exception:
                 LOG.exception("TMX scrape failed for %s", name)
-            try:
-                sedar_rows, disc = await run_sedar(page, target)
-                all_filings.extend(sedar_rows)
-                if disc:
-                    discovered.append(disc)
-            except Exception:
-                LOG.exception("SEDAR scrape failed for %s", name)
     finally:
         await context.close()
         await browser.close()
 
     LOG.info(
-        "Collected %d filings (%d TMX, %d SEDAR), discovered %d SEDAR URLs",
+        "Collected %d filings (%d TMX, %d SEDAR)",
         len(all_filings),
         sum(1 for f in all_filings if f.get("source") == "tmx_money"),
         sum(1 for f in all_filings if f.get("source") == "sedar_plus"),
-        len(discovered),
     )
 
-    if not all_filings and not discovered:
+    if not all_filings:
         return 0
 
     async with httpx.AsyncClient() as client:
-        summary = await post_ingest(client, all_filings, discovered)
+        summary = await post_ingest(client, all_filings, [])
     LOG.info("Backend response: %s", summary)
     return summary.get("inserted", 0)
 

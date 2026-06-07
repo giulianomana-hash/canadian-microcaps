@@ -125,6 +125,83 @@ body {
   font-style: italic;
 }
 
+.sw-card-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.sw-card-link-btn:hover {
+  color: #38bdf8;
+}
+
+.sw-sedar-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+
+.sw-sedar-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: inherit;
+  font-size: 0.78rem;
+  box-sizing: border-box;
+}
+
+.sw-sedar-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.sw-sedar-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sw-btn-save {
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid #38bdf8;
+  background: transparent;
+  color: #38bdf8;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.sw-btn-save:hover:not(:disabled) {
+  background: #38bdf8;
+  color: #0f172a;
+}
+
+.sw-btn-save:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.sw-btn-cancel {
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.sw-btn-cancel:hover {
+  border-color: #94a3b8;
+  color: #e2e8f0;
+}
+
 /* --- Watchlist cards --- */
 .sw-error {
   background: #7f1d1d;

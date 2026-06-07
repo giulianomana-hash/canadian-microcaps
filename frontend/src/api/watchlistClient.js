@@ -33,6 +33,11 @@ export function createWatchlistClient({ apiBaseUrl }) {
         method: "POST",
         body: JSON.stringify(entry),
       }),
+    updateWatchlistEntry: (id, patch) =>
+      request(`/api/watchlist/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
     removeWatchlistEntry: (id) =>
       request(`/api/watchlist/${encodeURIComponent(id)}`, {
         method: "DELETE",

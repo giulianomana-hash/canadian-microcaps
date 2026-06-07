@@ -9,6 +9,91 @@ const DEFAULT_CONFIG = {
   marketCapCeiling: 50_000_000,
 };
 
+function SedarUrlEditor({ entry, client, onUpdated }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(entry.sedar_profile_url ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      const updated = await client.updateWatchlistEntry(entry.id, {
+        sedar_profile_url: value.trim() || null,
+      });
+      onUpdated(updated);
+      setEditing(false);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <div className="sw-card-meta">
+        Filings:{" "}
+        {entry.sedar_profile_url ? (
+          <>
+            <a
+              href={entry.sedar_profile_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sw-card-link"
+            >
+              SEDAR+ ↗
+            </a>
+            {" · "}
+            <button
+              type="button"
+              className="sw-card-link-btn"
+              onClick={() => { setValue(entry.sedar_profile_url); setEditing(true); }}
+            >
+              edit
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="sw-card-pending">no SEDAR URL</span>
+            {" · "}
+            <button
+              type="button"
+              className="sw-card-link-btn"
+              onClick={() => { setValue(""); setEditing(true); }}
+            >
+              set URL
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="sw-sedar-editor">
+      <input
+        className="sw-sedar-input"
+        type="url"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="https://www.sedarplus.ca/csa-party/viewInstance/view.html?id=…"
+        autoFocus
+      />
+      <div className="sw-sedar-actions">
+        <button type="button" className="sw-btn-save" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" className="sw-btn-cancel" onClick={() => { setEditing(false); setErr(null); }}>
+          Cancel
+        </button>
+      </div>
+      {err && <div className="sw-error">{err}</div>}
+    </div>
+  );
+}
+
 export default function SedarWatchlist({ pluginConfig }) {
   const config = useMemo(
     () => ({ ...DEFAULT_CONFIG, ...(pluginConfig ?? {}) }),
@@ -65,6 +150,10 @@ export default function SedarWatchlist({ pluginConfig }) {
     }
   };
 
+  const handleEntryUpdated = (updated) => {
+    setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+  };
+
   return (
     <section className="sw-root">
       <CompanySearch client={client} onPick={handlePick} />
@@ -89,23 +178,11 @@ export default function SedarWatchlist({ pluginConfig }) {
               {entry.sector && (
                 <div className="sw-card-meta">Sector: {entry.sector}</div>
               )}
-              <div className="sw-card-meta">
-                Filings:{" "}
-                {entry.sedar_profile_url ? (
-                  <a
-                    href={entry.sedar_profile_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="sw-card-link"
-                  >
-                    on SEDAR+ ↗
-                  </a>
-                ) : (
-                  <span className="sw-card-pending">
-                    SEDAR+ lookup pending (next scrape)
-                  </span>
-                )}
-              </div>
+              <SedarUrlEditor
+                entry={entry}
+                client={client}
+                onUpdated={handleEntryUpdated}
+              />
               <button
                 type="button"
                 className="sw-card-remove"

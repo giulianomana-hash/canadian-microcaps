@@ -4,6 +4,10 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class WatchlistEntryUpdate(BaseModel):
+    sedar_profile_url: Optional[str] = None
+
+
 class WatchlistEntryCreate(BaseModel):
     user_id: str = Field(..., description="Owning user id (free-form string for now).")
     sedar_profile_id: Optional[str] = Field(
