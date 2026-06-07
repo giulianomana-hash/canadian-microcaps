@@ -11,7 +11,7 @@ import re
 from datetime import date, datetime
 from difflib import SequenceMatcher
 from typing import Optional
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
@@ -19,10 +19,23 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 LOG = logging.getLogger("sedar_plus")
 
 SEDAR_BASE = "https://www.sedarplus.ca"
-SEDAR_SEARCH_URL = SEDAR_BASE + "/csa-party/search/?searchText={q}"
+SEDAR_LANDING_URL = SEDAR_BASE + "/landingpage/"
 
 NAV_TIMEOUT_MS = 60_000
-SETTLE_MS = 3_500   # let Imperva's JS challenge complete
+SETTLE_MS = 4_000   # let Imperva's JS challenge complete
+
+# Candidate selectors for the SEDAR+ search box on the landing page.
+# SEDAR+ is an SPA; deep-linking the search URL trips Imperva's
+# "activity does not comply" block, so we type into the real box instead.
+SEARCH_INPUT_SELECTORS = (
+    "input[type='search']",
+    "input[placeholder*='earch']",
+    "input[name*='earch']",
+    "input[aria-label*='earch']",
+    "input[id*='earch']",
+    "#searchText",
+    "input.search-input",
+)
 
 DATE_PATTERNS = ("%Y-%m-%d", "%d-%m-%Y", "%b %d, %Y", "%B %d, %Y", "%Y/%m/%d")
 _PROFILE_HREF_RE = re.compile(r"/csa-party/viewInstance/view\.html\?id=[\w-]+", re.IGNORECASE)
@@ -63,14 +76,61 @@ def _looks_like_block_page(html: str) -> bool:
     return "stormcaster" in head or "blocked by the system" in head or "support id" in head
 
 
-async def discover_profile_url(page: Page, name: str) -> tuple[Optional[str], str]:
-    """Returns (profile_url, raw_html). URL is None if no good match."""
-    search_url = SEDAR_SEARCH_URL.format(q=quote_plus(name))
+async def _type_into_search(page: Page, name: str) -> bool:
+    """Find the SPA search box, type the company name, submit. Returns
+    True if we found a box to type into."""
+    for selector in SEARCH_INPUT_SELECTORS:
+        try:
+            box = page.locator(selector).first
+            if await box.count() == 0:
+                continue
+            await box.click(timeout=5_000)
+            await box.fill("")
+            await box.type(name, delay=60)
+            await page.wait_for_timeout(500)
+            await box.press("Enter")
+            LOG.info("SEDAR+: typed %r into %s", name, selector)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+async def discover_profile_url(page: Page, name: str, screenshot_path=None) -> tuple[Optional[str], str]:
+    """Returns (profile_url, raw_html). URL is None if no good match.
+
+    Drives the SEDAR+ landing-page search box like a human rather than
+    deep-linking the search URL (which Imperva blocks as non-compliant
+    activity).
+    """
     try:
-        await page.goto(search_url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+        await page.goto(SEDAR_LANDING_URL, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
     except PlaywrightTimeout:
-        LOG.warning("SEDAR+ search timeout for %r", name)
+        LOG.warning("SEDAR+ landing timeout for %r", name)
     await page.wait_for_timeout(SETTLE_MS)
+
+    if _looks_like_block_page(await page.content()):
+        LOG.warning("SEDAR+ blocked us on the landing page for %r", name)
+        if screenshot_path:
+            try:
+                await page.screenshot(path=screenshot_path, full_page=True)
+            except Exception:
+                pass
+        return None, await page.content()
+
+    typed = await _type_into_search(page, name)
+    if not typed:
+        LOG.warning("SEDAR+: could not locate a search box for %r", name)
+    else:
+        # Wait for SPA results to render.
+        await page.wait_for_timeout(SETTLE_MS)
+
+    if screenshot_path:
+        try:
+            await page.screenshot(path=screenshot_path, full_page=True)
+        except Exception as exc:
+            LOG.warning("Screenshot failed: %s", exc)
+
     html = await page.content()
 
     if _looks_like_block_page(html):

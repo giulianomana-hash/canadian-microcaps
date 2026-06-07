@@ -122,7 +122,10 @@ async def run_sedar(page: Page, target: dict) -> tuple[list[dict], dict | None]:
 
     if not profile_url:
         LOG.info("SEDAR+: no cached URL for %r — discovering", name)
-        profile_url, search_html = await sedar_plus.discover_profile_url(page, name)
+        shot = str(ARTIFACT_DIR / f"sedar_search_{_slug(name)}.png")
+        profile_url, search_html = await sedar_plus.discover_profile_url(
+            page, name, screenshot_path=shot
+        )
         _save_html(f"sedar_search_{_slug(name)}", search_html)
         if profile_url:
             discovered = {"watchlist_id": target["id"], "sedar_profile_url": profile_url}
