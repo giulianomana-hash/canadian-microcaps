@@ -15,9 +15,10 @@ SEDAR+ is fronted by Imperva, which blocks server-to-server requests from cloud 
 1. **GitHub** — you already have it
 2. **Supabase** — database
 3. **Render** — hosting
-4. **Resend** *(optional)* — email notifications
+4. **Finnhub** — powers the company search bar
+5. **Resend** *(optional)* — email notifications
 
-All four are free, none require a credit card.
+All five are free, none require a credit card.
 
 ---
 
@@ -90,7 +91,18 @@ From now on it'll fire twice a day automatically.
 
 ---
 
-## Step 6 — (Optional) Email notifications via Resend
+## Step 6 — Finnhub API key (for the search bar)
+
+The add-company search uses Finnhub. Yahoo Finance rate-limits Render's IP, so we use Finnhub instead — 60 calls/minute on the free tier, plenty for typeahead.
+
+1. https://finnhub.io → **Get free API key** → sign up with email
+2. Copy the API key from your dashboard (looks like `cugxyz1abc234defg5h6i`)
+3. Render → `sedarwatchlist-api` → **Environment** → set `FINNHUB_API_KEY` to that value → **Save Changes**
+4. The service auto-restarts in ~30 sec
+
+Until this is set, the search bar will return an empty list for every query.
+
+## Step 7 — (Optional) Email notifications via Resend
 
 Skip this if you only want the in-app filings feed.
 

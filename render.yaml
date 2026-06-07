@@ -28,6 +28,8 @@ services:
         value: "SedarWatchlist <onboarding@resend.dev>"
       - key: NOTIFY_EMAIL
         sync: false           # email address to send filings notifications to
+      - key: FINNHUB_API_KEY
+        sync: false           # free signup at https://finnhub.io — powers the search bar
 
   # ---------- Vite/React frontend (static, always-on free tier) ----------
   - type: web

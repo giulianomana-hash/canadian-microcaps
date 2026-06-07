@@ -21,6 +21,9 @@ class Settings:
     resend_from: str = os.getenv("RESEND_FROM", "SedarWatchlist <onboarding@resend.dev>").strip()
     notify_email: str = os.getenv("NOTIFY_EMAIL", "").strip()
 
+    # Finnhub.io API key for the add-company search. Free signup, 60 calls/min.
+    finnhub_api_key: str = os.getenv("FINNHUB_API_KEY", "").strip()
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]
