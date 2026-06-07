@@ -89,16 +89,34 @@ The repo contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 
 
 From now on it'll fire twice a day automatically.
 
-## Step 5 — (Optional) ScraperAPI for SEDAR+
+## Step 5 — Install the self-hosted runner on your macOS laptop
 
-Skip if your watchlist is only TSX/TSXV — TMX Money covers those for free.
+SEDAR+ is fronted by Imperva, which blocks every cloud datacenter IP (GitHub's cloud runners, Render, etc.) but lets through real consumer ISPs. So the scrape job runs from your home Mac.
 
-ScraperAPI handles Imperva for us so we can reach SEDAR+. Free tier: 1,000 credits/month. SEDAR+ calls cost ~25 credits each (premium proxies + JS rendering), so the free tier supports roughly 40 SEDAR fetches per month — enough for a few CSE-only companies polled daily.
+1. GitHub → your repo → **Settings → Actions → Runners → New self-hosted runner**
+2. Pick **macOS** + your Mac's architecture (ARM64 for Apple Silicon, x64 for Intel)
+3. Open Terminal and copy/paste the commands GitHub shows you. They look like:
+   ```bash
+   mkdir actions-runner && cd actions-runner
+   curl -o actions-runner-osx-arm64.tar.gz -L https://github.com/actions/runner/releases/download/...
+   tar xzf actions-runner-osx-arm64.tar.gz
+   ./config.sh --url https://github.com/<you>/canadian-microcaps --token <token>
+   ```
+   - Accept all the defaults during `./config.sh` (runner name, labels, work folder).
+4. Install as a background service so it auto-starts on login:
+   ```bash
+   ./svc.sh install
+   ./svc.sh start
+   ```
+5. Verify in GitHub: **Settings → Actions → Runners** should now list your Mac as **Idle** with a green dot.
 
-1. https://www.scraperapi.com → **Start trial** → sign up with email (no card)
-2. Copy the API key from your dashboard
-3. GitHub → repo → **Settings → Secrets and variables → Actions** → add `SCRAPERAPI_KEY` = your key
-4. The next scheduled (or manually-triggered) run picks it up automatically
+**Caveat:** the runner only picks up jobs while your Mac is awake and connected to the internet. If the cron fires at 9 AM and your Mac is asleep, the job queues. When you next open your laptop, the runner reconnects and the queued job runs immediately — you'd get the email a few minutes later.
+
+### Test it
+
+GitHub → **Actions → Scrape filings (TMX + SEDAR+) → Run workflow**.
+
+First run will be ~3-5 min (downloads Chromium into your Mac's Library). Subsequent runs are ~30 sec to 2 min depending on watchlist size. The job log lives on GitHub as always.
 
 ---
 

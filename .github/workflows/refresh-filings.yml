@@ -1,6 +1,8 @@
 name: Scrape filings (TMX + SEDAR+)
 
 # 9 AM and 4 PM in São Paulo / Buenos Aires (GMT-3) = 12:00 and 19:00 UTC.
+# Self-hosted runner: if the Mac is asleep at cron time the job queues
+# and runs when the runner reconnects.
 on:
   schedule:
     - cron: "0 12 * * *"
@@ -9,12 +11,15 @@ on:
 
 jobs:
   scrape:
-    runs-on: ubuntu-latest
+    # Self-hosted runner installed on your macOS laptop.
+    # To fall back to GitHub's cloud runners temporarily, change this to
+    #   runs-on: ubuntu-latest
+    # and reinstate `--with-deps` on the playwright install step below.
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 25
     env:
       BACKEND_URL: ${{ secrets.REFRESH_API_URL }}
       REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
-      SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,9 +28,6 @@ jobs:
           if [ -z "$BACKEND_URL" ] || [ -z "$REFRESH_SECRET" ]; then
             echo "Missing REFRESH_API_URL or REFRESH_SECRET secret." >&2
             exit 1
-          fi
-          if [ -z "$SCRAPERAPI_KEY" ]; then
-            echo "::warning::SCRAPERAPI_KEY not set — SEDAR+ layer disabled, TMX only."
           fi
 
       - uses: actions/setup-python@v5
@@ -38,7 +40,8 @@ jobs:
         run: pip install -r scripts/requirements.txt
 
       - name: Install Chromium for Playwright
-        run: python -m playwright install --with-deps chromium
+        # macOS doesn't need --with-deps (that's Linux apt only).
+        run: python -m playwright install chromium
 
       - name: Run scraper
         working-directory: scripts

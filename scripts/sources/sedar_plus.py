@@ -1,10 +1,8 @@
-"""SEDAR+ scraper that routes through ScraperAPI to bypass Imperva.
+"""SEDAR+ scraper using Playwright directly.
 
-ScraperAPI handles the JS rendering, residential-proxy rotation, and
-anti-bot challenge for us. Free tier: 1,000 credits/month. Each call to
-SEDAR+ with `premium=true&render=true` costs ~25 credits, so the free
-tier supports roughly 40 SEDAR fetches per month — enough for a handful
-of CSE-only companies on a daily cadence.
+Designed for a self-hosted runner with a residential home IP. Imperva
+allows real consumer ISPs through; what it blocks is datacenter IPs
+(Render, GitHub Actions cloud) and shared proxy pools.
 """
 from __future__ import annotations
 
@@ -15,35 +13,20 @@ from difflib import SequenceMatcher
 from typing import Optional
 from urllib.parse import quote_plus, urljoin
 
-import httpx
 from bs4 import BeautifulSoup
+from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 LOG = logging.getLogger("sedar_plus")
 
-SCRAPERAPI = "https://api.scraperapi.com"
 SEDAR_BASE = "https://www.sedarplus.ca"
 SEDAR_SEARCH_URL = SEDAR_BASE + "/csa-party/search/?searchText={q}"
 
+NAV_TIMEOUT_MS = 60_000
+SETTLE_MS = 3_500   # let Imperva's JS challenge complete
+
 DATE_PATTERNS = ("%Y-%m-%d", "%d-%m-%Y", "%b %d, %Y", "%B %d, %Y", "%Y/%m/%d")
-# Real SEDAR+ company profile URLs look like:
-#   /csa-party/viewInstance/view.html?id=<hash>
 _PROFILE_HREF_RE = re.compile(r"/csa-party/viewInstance/view\.html\?id=[\w-]+", re.IGNORECASE)
 _FILING_ID_RE = re.compile(r"(?:id|filingId|submissionId)=([\w-]+)", re.IGNORECASE)
-
-
-async def _fetch(api_key: str, target_url: str) -> str:
-    """Pull `target_url` through ScraperAPI with full anti-bot treatment."""
-    params = {
-        "api_key": api_key,
-        "url": target_url,
-        "render": "true",
-        "premium": "true",
-        "country_code": "ca",
-    }
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.get(SCRAPERAPI, params=params)
-        resp.raise_for_status()
-        return resp.text
 
 
 def _parse_date(text: str) -> Optional[date]:
@@ -75,14 +58,24 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
-async def discover_profile_url(api_key: str, name: str) -> tuple[Optional[str], str]:
-    """Return (profile_url, raw_html). URL is None if no good match."""
+def _looks_like_block_page(html: str) -> bool:
+    head = (html or "")[:2000].lower()
+    return "stormcaster" in head or "blocked by the system" in head or "support id" in head
+
+
+async def discover_profile_url(page: Page, name: str) -> tuple[Optional[str], str]:
+    """Returns (profile_url, raw_html). URL is None if no good match."""
     search_url = SEDAR_SEARCH_URL.format(q=quote_plus(name))
     try:
-        html = await _fetch(api_key, search_url)
-    except Exception as exc:
-        LOG.warning("ScraperAPI search failed for %r: %s", name, exc)
-        return None, ""
+        await page.goto(search_url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+    except PlaywrightTimeout:
+        LOG.warning("SEDAR+ search timeout for %r", name)
+    await page.wait_for_timeout(SETTLE_MS)
+    html = await page.content()
+
+    if _looks_like_block_page(html):
+        LOG.warning("SEDAR+ served the Imperva block page for %r", name)
+        return None, html
 
     soup = BeautifulSoup(html, "html.parser")
     best: tuple[float, str, str] | None = None
@@ -108,13 +101,18 @@ async def discover_profile_url(api_key: str, name: str) -> tuple[Optional[str], 
     return url, html
 
 
-async def fetch_filings(api_key: str, profile_url: str) -> tuple[list[dict], str]:
-    """Return (filings, raw_html). Filings parsed from the profile page DOM."""
+async def fetch_filings(page: Page, profile_url: str) -> tuple[list[dict], str]:
+    """Returns (filings, raw_html). Empty list on block page or no rows."""
     try:
-        html = await _fetch(api_key, profile_url)
-    except Exception as exc:
-        LOG.warning("ScraperAPI profile fetch failed for %s: %s", profile_url, exc)
-        return [], ""
+        await page.goto(profile_url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
+    except PlaywrightTimeout:
+        LOG.warning("SEDAR+ profile timeout for %s", profile_url)
+    await page.wait_for_timeout(SETTLE_MS)
+    html = await page.content()
+
+    if _looks_like_block_page(html):
+        LOG.warning("SEDAR+ served the Imperva block page for %s", profile_url)
+        return [], html
 
     soup = BeautifulSoup(html, "html.parser")
     hits: list[dict] = []

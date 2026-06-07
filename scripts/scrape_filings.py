@@ -1,17 +1,18 @@
-"""Filings scraper — orchestrates TMX Money (free) and SEDAR+ via
-ScraperAPI (paid quota) per watched company.
+"""Filings scraper — TMX Money + SEDAR+, both via Playwright.
 
-Runs inside GitHub Actions:
-  1. Fetch scrape targets from backend.
-  2. For each company:
-     - If the ticker is TSX/TSXV/NEO → scrape TMX Money (free, every run).
-     - Always attempt SEDAR+ via ScraperAPI when SCRAPERAPI_KEY is set
-       (covers CSE-only listings and SEDAR-only regulatory filings).
-  3. POST the combined results to /api/filings/ingest. Backend dedupes,
-     inserts, and emails.
+Designed to run on a self-hosted GitHub Actions runner (your home Mac).
+Real consumer ISPs pass through Imperva; cloud datacenter IPs don't.
 
-Rendered HTML for every page is uploaded as an Actions artifact so any
-parser fix is a one-file change.
+Per company on each run:
+  1. TMX Money news page (free, fast).
+  2. SEDAR+ profile page (free from a residential IP). Profile URL is
+     auto-discovered via SEDAR's own search the first time we see a
+     company, then cached on the watchlist row for subsequent runs.
+  3. POST results to /api/filings/ingest — backend dedupes, inserts,
+     emails via Resend.
+
+Rendered HTML for every page is saved as a workflow artifact so any
+parser tweak is a one-file change.
 """
 from __future__ import annotations
 
@@ -32,13 +33,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 BACKEND_URL = os.environ["BACKEND_URL"].rstrip("/")
 REFRESH_SECRET = os.environ["REFRESH_SECRET"]
-SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY", "").strip()
 
 USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 )
-BETWEEN_COMPANIES_MS = 2_000
+BETWEEN_COMPANIES_MS = 2_500
 ARTIFACT_DIR = Path("artifacts")
 
 
@@ -94,10 +94,8 @@ async def run_tmx(page: Page, target: dict) -> list[dict]:
     return rows
 
 
-async def run_sedar(target: dict) -> tuple[list[dict], dict | None]:
+async def run_sedar(page: Page, target: dict) -> tuple[list[dict], dict | None]:
     """Returns (filings, discovered_url_record_or_None)."""
-    if not SCRAPERAPI_KEY:
-        return [], None
     name = target.get("name") or ""
     ticker = target.get("ticker")
     profile_url = target.get("sedar_profile_url")
@@ -105,7 +103,7 @@ async def run_sedar(target: dict) -> tuple[list[dict], dict | None]:
 
     if not profile_url:
         LOG.info("SEDAR+: no cached URL for %r — discovering", name)
-        profile_url, search_html = await sedar_plus.discover_profile_url(SCRAPERAPI_KEY, name)
+        profile_url, search_html = await sedar_plus.discover_profile_url(page, name)
         _save_html(f"sedar_search_{_slug(name)}", search_html)
         if profile_url:
             discovered = {"watchlist_id": target["id"], "sedar_profile_url": profile_url}
@@ -113,7 +111,7 @@ async def run_sedar(target: dict) -> tuple[list[dict], dict | None]:
     if not profile_url:
         return [], None
 
-    rows, profile_html = await sedar_plus.fetch_filings(SCRAPERAPI_KEY, profile_url)
+    rows, profile_html = await sedar_plus.fetch_filings(page, profile_url)
     _save_html(f"sedar_profile_{_slug(name)}", profile_html)
     for r in rows:
         r["ticker"] = ticker
@@ -129,11 +127,6 @@ async def run(playwright: Playwright) -> int:
         targets = await fetch_targets(client)
 
     LOG.info("Got %d scrape target(s)", len(targets))
-    if SCRAPERAPI_KEY:
-        LOG.info("SCRAPERAPI_KEY set — SEDAR+ layer is active.")
-    else:
-        LOG.warning("SCRAPERAPI_KEY not set — SEDAR+ layer disabled, TMX only.")
-
     if not targets:
         return 0
 
@@ -163,7 +156,7 @@ async def run(playwright: Playwright) -> int:
             except Exception:
                 LOG.exception("TMX scrape failed for %s", name)
             try:
-                sedar_rows, disc = await run_sedar(target)
+                sedar_rows, disc = await run_sedar(page, target)
                 all_filings.extend(sedar_rows)
                 if disc:
                     discovered.append(disc)
