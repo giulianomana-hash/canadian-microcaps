@@ -16,24 +16,24 @@ from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 LOG = logging.getLogger("tmx_money")
 
-# Ticker suffix → TMX URL suffix.
-SUFFIX_MAP = {
-    ".TO": "-T",   # TSX
-    ".V":  "-V",   # TSX Venture
-    ".NE": "-N",   # NEO Exchange (Cboe Canada)
-}
+# TMX Money uses the bare ticker for all Canadian listings — no exchange
+# suffix in the URL. Strip Yahoo/Finnhub suffixes before building the URL.
+KNOWN_SUFFIXES = (".TO", ".V", ".CN", ".NE")
 NAV_TIMEOUT_MS = 45_000
-SETTLE_MS = 2_000
+SETTLE_MS = 2_500
 
 DATE_PATTERNS = ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%d %b %Y")
 
 
 def url_for(ticker: str) -> Optional[str]:
-    for suffix, mapped in SUFFIX_MAP.items():
-        if ticker.endswith(suffix):
-            base = ticker[: -len(suffix)]
-            return f"https://money.tmx.com/en/quote/{base}{mapped}/news"
-    return None
+    if not ticker:
+        return None
+    base = ticker
+    for suffix in KNOWN_SUFFIXES:
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return f"https://money.tmx.com/en/quote/{base}/news"
 
 
 def _parse_date(text: str) -> Optional[date]:
