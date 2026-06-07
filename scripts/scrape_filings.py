@@ -153,17 +153,19 @@ async def run(playwright: Playwright) -> int:
         "--disable-blink-features=AutomationControlled",
         "--disable-features=IsolateOrigins,site-per-process",
     ]
-    # Prefer the real Chrome binary installed on the Mac — its TLS/network
-    # fingerprint is genuinely Chrome's, which is the biggest signal Imperva
-    # checks. Fall back to bundled Chromium if Chrome isn't installed.
+    # Run Chrome non-headless. Headless Chrome has subtle differences
+    # (WebGL, AudioContext) that Imperva uses to fingerprint automation.
+    # Your runner is a LaunchAgent in the user Aqua session, so it has
+    # GUI access — Chrome windows will briefly pop up during a scrape.
+    headless = os.environ.get("PLAYWRIGHT_HEADLESS", "false").lower() == "true"
     try:
         browser = await playwright.chromium.launch(
-            channel="chrome", headless=True, args=launch_args
+            channel="chrome", headless=headless, args=launch_args
         )
-        LOG.info("Launched real Chrome (channel=chrome)")
+        LOG.info("Launched real Chrome (channel=chrome, headless=%s)", headless)
     except Exception as exc:
         LOG.warning("Real Chrome unavailable (%s); falling back to bundled Chromium", exc)
-        browser = await playwright.chromium.launch(headless=True, args=launch_args)
+        browser = await playwright.chromium.launch(headless=headless, args=launch_args)
     context = await browser.new_context(
         user_agent=USER_AGENT,
         viewport={"width": 1366, "height": 900},
