@@ -149,13 +149,21 @@ async def run(playwright: Playwright) -> int:
     if not targets:
         return 0
 
-    browser = await playwright.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--disable-features=IsolateOrigins,site-per-process",
-        ],
-    )
+    launch_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+    ]
+    # Prefer the real Chrome binary installed on the Mac — its TLS/network
+    # fingerprint is genuinely Chrome's, which is the biggest signal Imperva
+    # checks. Fall back to bundled Chromium if Chrome isn't installed.
+    try:
+        browser = await playwright.chromium.launch(
+            channel="chrome", headless=True, args=launch_args
+        )
+        LOG.info("Launched real Chrome (channel=chrome)")
+    except Exception as exc:
+        LOG.warning("Real Chrome unavailable (%s); falling back to bundled Chromium", exc)
+        browser = await playwright.chromium.launch(headless=True, args=launch_args)
     context = await browser.new_context(
         user_agent=USER_AGENT,
         viewport={"width": 1366, "height": 900},
