@@ -3,6 +3,11 @@
 
 create extension if not exists "pgcrypto";
 
+-- This is a single-user personal tool; the backend authenticates separately
+-- and Supabase's anon key respects RLS, which blocks our inserts otherwise.
+-- If you later want true multi-user separation, re-enable RLS here and add
+-- proper policies.
+
 -- ---------- watchlist ----------
 create table if not exists public.watchlist (
     id           uuid primary key default gen_random_uuid(),
@@ -60,3 +65,7 @@ create index if not exists filings_sedar_profile_idx on public.filings (sedar_pr
 create index if not exists filings_ticker_idx        on public.filings (ticker);
 create index if not exists filings_filing_date_idx   on public.filings (filing_date desc);
 create index if not exists filings_created_at_idx    on public.filings (created_at desc);
+
+-- ---------- disable RLS (single-user personal tool) ----------
+alter table public.watchlist disable row level security;
+alter table public.filings   disable row level security;
