@@ -20,10 +20,6 @@ jobs:
     env:
       BACKEND_URL: ${{ secrets.REFRESH_API_URL }}
       REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
-      # setup-python defaults to /Users/runner/hostedtoolcache on macOS, which
-      # is GitHub's cloud-runner path and doesn't exist on a self-hosted Mac.
-      # Point it at the runner's own writable temp dir instead.
-      AGENT_TOOLSDIRECTORY: ${{ runner.temp }}/hostedtoolcache
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +29,13 @@ jobs:
             echo "Missing REFRESH_API_URL or REFRESH_SECRET secret." >&2
             exit 1
           fi
+
+      - name: Point setup-python at a writable cache dir
+        # Default is /Users/runner/hostedtoolcache (GitHub's cloud user) which
+        # doesn't exist on a self-hosted Mac running as your own account.
+        run: |
+          mkdir -p "$HOME/hostedtoolcache"
+          echo "AGENT_TOOLSDIRECTORY=$HOME/hostedtoolcache" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
