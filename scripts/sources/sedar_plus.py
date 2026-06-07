@@ -1,0 +1,163 @@
+"""SEDAR+ scraper that routes through ScraperAPI to bypass Imperva.
+
+ScraperAPI handles the JS rendering, residential-proxy rotation, and
+anti-bot challenge for us. Free tier: 1,000 credits/month. Each call to
+SEDAR+ with `premium=true&render=true` costs ~25 credits, so the free
+tier supports roughly 40 SEDAR fetches per month — enough for a handful
+of CSE-only companies on a daily cadence.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from datetime import date, datetime
+from difflib import SequenceMatcher
+from typing import Optional
+from urllib.parse import quote_plus, urljoin
+
+import httpx
+from bs4 import BeautifulSoup
+
+LOG = logging.getLogger("sedar_plus")
+
+SCRAPERAPI = "https://api.scraperapi.com"
+SEDAR_BASE = "https://www.sedarplus.ca"
+SEDAR_SEARCH_URL = SEDAR_BASE + "/csa-party/search/?searchText={q}"
+
+DATE_PATTERNS = ("%Y-%m-%d", "%d-%m-%Y", "%b %d, %Y", "%B %d, %Y", "%Y/%m/%d")
+# Real SEDAR+ company profile URLs look like:
+#   /csa-party/viewInstance/view.html?id=<hash>
+_PROFILE_HREF_RE = re.compile(r"/csa-party/viewInstance/view\.html\?id=[\w-]+", re.IGNORECASE)
+_FILING_ID_RE = re.compile(r"(?:id|filingId|submissionId)=([\w-]+)", re.IGNORECASE)
+
+
+async def _fetch(api_key: str, target_url: str) -> str:
+    """Pull `target_url` through ScraperAPI with full anti-bot treatment."""
+    params = {
+        "api_key": api_key,
+        "url": target_url,
+        "render": "true",
+        "premium": "true",
+        "country_code": "ca",
+    }
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.get(SCRAPERAPI, params=params)
+        resp.raise_for_status()
+        return resp.text
+
+
+def _parse_date(text: str) -> Optional[date]:
+    text = (text or "").strip()
+    if not text:
+        return None
+    for fmt in DATE_PATTERNS:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    if len(text) >= 10:
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _filing_id_from_url(url: str) -> Optional[str]:
+    m = _FILING_ID_RE.search(url)
+    if m:
+        return m.group(1)
+    nums = re.findall(r"\d{4,}", url)
+    return nums[-1] if nums else None
+
+
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+async def discover_profile_url(api_key: str, name: str) -> tuple[Optional[str], str]:
+    """Return (profile_url, raw_html). URL is None if no good match."""
+    search_url = SEDAR_SEARCH_URL.format(q=quote_plus(name))
+    try:
+        html = await _fetch(api_key, search_url)
+    except Exception as exc:
+        LOG.warning("ScraperAPI search failed for %r: %s", name, exc)
+        return None, ""
+
+    soup = BeautifulSoup(html, "html.parser")
+    best: tuple[float, str, str] | None = None
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not _PROFILE_HREF_RE.search(href):
+            continue
+        text = link.get_text(" ", strip=True)
+        if not text:
+            continue
+        score = _similarity(text, name)
+        if best is None or score > best[0]:
+            best = (score, text, href)
+    if not best:
+        LOG.warning("SEDAR+: no profile links found for %r", name)
+        return None, html
+    score, label, href = best
+    if score < 0.35:
+        LOG.warning("SEDAR+: weak best match for %r — %r (%.2f); skipping", name, label, score)
+        return None, html
+    url = href if href.startswith("http") else urljoin(SEDAR_BASE, href)
+    LOG.info("SEDAR+: discovered %r → %s (%.2f)", name, label, score)
+    return url, html
+
+
+async def fetch_filings(api_key: str, profile_url: str) -> tuple[list[dict], str]:
+    """Return (filings, raw_html). Filings parsed from the profile page DOM."""
+    try:
+        html = await _fetch(api_key, profile_url)
+    except Exception as exc:
+        LOG.warning("ScraperAPI profile fetch failed for %s: %s", profile_url, exc)
+        return [], ""
+
+    soup = BeautifulSoup(html, "html.parser")
+    hits: list[dict] = []
+    seen_keys: set[str] = set()
+
+    for table in soup.find_all("table"):
+        for row in table.find_all("tr"):
+            cells = row.find_all(["td", "th"])
+            if len(cells) < 2:
+                continue
+            link = row.find("a", href=True)
+            if not link:
+                continue
+            date_value = None
+            for cell in cells:
+                date_value = _parse_date(cell.get_text(" ", strip=True))
+                if date_value:
+                    break
+            if not date_value:
+                continue
+            filing_type = ""
+            for cell in cells:
+                txt = cell.get_text(" ", strip=True)
+                if txt and not _parse_date(txt) and txt.lower() not in {"view", "open", "pdf", "html"}:
+                    filing_type = txt
+                    break
+            url = link["href"]
+            if url.startswith("/"):
+                url = SEDAR_BASE + url
+            elif not url.startswith("http"):
+                url = urljoin(profile_url, url)
+            filing_id = _filing_id_from_url(url) or f"{date_value.isoformat()}|{filing_type}|{url}"
+            if filing_id in seen_keys:
+                continue
+            seen_keys.add(filing_id)
+            hits.append(
+                {
+                    "sedar_filing_id": filing_id,
+                    "filing_type": filing_type or "Filing",
+                    "filing_date": date_value.isoformat(),
+                    "url": url,
+                    "title": link.get_text(" ", strip=True) or None,
+                    "source": "sedar_plus",
+                }
+            )
+    return hits, html

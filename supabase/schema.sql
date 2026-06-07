@@ -61,6 +61,10 @@ create unique index if not exists filings_sedar_unique_idx
     on public.filings (sedar_profile_id, sedar_filing_id)
     where sedar_profile_id is not null and sedar_filing_id is not null;
 
+-- Dedup non-SEDAR rows (TMX news, etc.) by URL — also covers SEDAR if its
+-- partial index above misses a row that lacks one of the columns.
+create unique index if not exists filings_url_unique_idx on public.filings (url);
+
 create index if not exists filings_sedar_profile_idx on public.filings (sedar_profile_id);
 create index if not exists filings_ticker_idx        on public.filings (ticker);
 create index if not exists filings_filing_date_idx   on public.filings (filing_date desc);

@@ -1,11 +1,11 @@
-name: Scrape SEDAR+ filings
+name: Scrape filings (TMX + SEDAR+)
 
 # 9 AM and 4 PM in São Paulo / Buenos Aires (GMT-3) = 12:00 and 19:00 UTC.
 on:
   schedule:
     - cron: "0 12 * * *"
     - cron: "0 19 * * *"
-  workflow_dispatch:        # lets you trigger a manual run from the Actions tab
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -14,6 +14,7 @@ jobs:
     env:
       BACKEND_URL: ${{ secrets.REFRESH_API_URL }}
       REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
+      SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +23,9 @@ jobs:
           if [ -z "$BACKEND_URL" ] || [ -z "$REFRESH_SECRET" ]; then
             echo "Missing REFRESH_API_URL or REFRESH_SECRET secret." >&2
             exit 1
+          fi
+          if [ -z "$SCRAPERAPI_KEY" ]; then
+            echo "::warning::SCRAPERAPI_KEY not set — SEDAR+ layer disabled, TMX only."
           fi
 
       - uses: actions/setup-python@v5
@@ -37,13 +41,14 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: Run scraper
-        run: python scripts/scrape_sedar.py
+        working-directory: scripts
+        run: python scrape_filings.py
 
-      - name: Upload rendered HTML (for parser debugging)
+      - name: Upload rendered HTML (parser debugging)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sedar-html
-          path: artifacts/
+          name: scrape-html
+          path: scripts/artifacts/
           if-no-files-found: ignore
           retention-days: 7

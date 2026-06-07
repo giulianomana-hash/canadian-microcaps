@@ -6,7 +6,12 @@ Total time: ~15 minutes. Everything below is free.
 
 ## Architecture (why it's split this way)
 
-SEDAR+ is fronted by Imperva, which blocks server-to-server requests from cloud IPs like Render's. So the heavy work happens in **GitHub Actions** — a free runner spins up Chromium via Playwright, navigates SEDAR+ as a real browser (passing Imperva's JS challenge), parses the filings out of each company's profile page, then POSTs the results back to the backend on Render. Render's job is just to serve the UI, store data, send the email, and tell the scraper which companies to visit.
+The filings pipeline runs in **GitHub Actions** twice a day, hitting two sources per company:
+
+- **TMX Money** (free, no quota) — for any ticker on TSX / TSXV / NEO, we grab the press-release feed directly from `money.tmx.com`. No anti-bot, no auth.
+- **SEDAR+ via ScraperAPI** (free tier — 1,000 credits/month) — SEDAR+ is behind Imperva, which hard-blocks cloud IPs even via Playwright. ScraperAPI proxies our requests through residential IPs and handles Imperva. We use this for SEDAR-only filings and for CSE (`.CN`) listings that TMX doesn't cover.
+
+Render runs the UI, stores data, sends the email, and tells the scraper which companies to visit. The scraper POSTs filings back to `/api/filings/ingest`.
 
 ---
 
@@ -71,20 +76,33 @@ Open the frontend URL — you should see the search bar.
 
 ## Step 4 — GitHub Actions: schedule the twice-daily scraper
 
-The repo contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 UTC and 19:00 UTC (= 09:00 and 16:00 in GMT-3). It installs Playwright + Chromium, scrapes every watched SEDAR+ profile page, and POSTs the result to your backend.
+The repo contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 UTC and 19:00 UTC (= 09:00 and 16:00 in GMT-3).
 
 1. GitHub → your `canadian-microcaps` repo → **Settings → Secrets and variables → Actions → New repository secret**
-2. Add two secrets:
+2. Add three secrets:
    - `REFRESH_API_URL` → your backend URL, e.g. `https://sedarwatchlist-api.onrender.com`
    - `REFRESH_SECRET` → the same long random string you set on Render
-3. **Actions tab → Scrape SEDAR+ filings → Run workflow** (manual trigger) to test it. The job takes ~3–5 minutes (most of that is installing Chromium). Look at the log for a line like `Backend response: {'received': N, 'inserted': M, 'email_sent': true|false}`.
-4. Every job uploads the rendered HTML of each company page as an artifact named `sedar-html`. If parsing returns zero rows for a company you expected, download the artifact from the Actions run page and we can fix the parser without touching the workflow.
+   - `SCRAPERAPI_KEY` → your ScraperAPI key (Step 5 below). Skip this for now if you only watch TSX/TSXV — TMX covers those.
+3. **Actions tab → Scrape filings (TMX + SEDAR+) → Run workflow** (manual trigger) to test it. The job takes ~3–5 minutes (mostly Chromium download).
+4. Look at the log for `Backend response: {'received': N, 'inserted': M, 'email_sent': true|false}`.
+5. Every job uploads the rendered HTML of each fetched page as an artifact named `scrape-html`. If a company shows zero rows when you know it should have news, download the artifact and send me the relevant HTML file.
 
 From now on it'll fire twice a day automatically.
 
+## Step 5 — (Optional) ScraperAPI for SEDAR+
+
+Skip if your watchlist is only TSX/TSXV — TMX Money covers those for free.
+
+ScraperAPI handles Imperva for us so we can reach SEDAR+. Free tier: 1,000 credits/month. SEDAR+ calls cost ~25 credits each (premium proxies + JS rendering), so the free tier supports roughly 40 SEDAR fetches per month — enough for a few CSE-only companies polled daily.
+
+1. https://www.scraperapi.com → **Start trial** → sign up with email (no card)
+2. Copy the API key from your dashboard
+3. GitHub → repo → **Settings → Secrets and variables → Actions** → add `SCRAPERAPI_KEY` = your key
+4. The next scheduled (or manually-triggered) run picks it up automatically
+
 ---
 
-## Step 5 — (Optional) Tighten CORS
+## Step 5b — (Optional) Tighten CORS
 
 1. Copy the frontend URL (e.g. `https://sedarwatchlist-web.onrender.com`)
 2. `sedarwatchlist-api` → **Environment** → set `CORS_ORIGINS` to that URL (no trailing slash) → **Save Changes**
