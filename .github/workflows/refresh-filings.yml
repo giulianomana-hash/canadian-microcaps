@@ -1,10 +1,8 @@
 name: Scrape filings (TMX + SEDAR+)
 
-# 9 AM and 4 PM in São Paulo / Buenos Aires (GMT-3) = 12:00 and 19:00 UTC.
+# Scheduled runs are paused while we wire up ScrapingBee for SEDAR+.
+# Manual trigger only — re-add the cron block to resume twice-daily runs.
 on:
-  schedule:
-    - cron: "0 12 * * *"
-    - cron: "0 19 * * *"
   workflow_dispatch:
 
 jobs:
@@ -14,6 +12,7 @@ jobs:
     env:
       BACKEND_URL: ${{ secrets.REFRESH_API_URL }}
       REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
+      SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPINGBEE_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 

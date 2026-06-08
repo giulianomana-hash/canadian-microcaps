@@ -8,8 +8,8 @@ Total time: ~15 minutes. Everything below is free.
 
 The filings pipeline runs in **GitHub Actions** twice a day, hitting two sources per company:
 
-- **TMX Money** (free, no quota) — for any ticker on TSX / TSXV / NEO, we grab the press-release feed directly from `money.tmx.com`. No anti-bot, no auth.
-- **SEDAR+ via ScraperAPI** (free tier — 1,000 credits/month) — SEDAR+ is behind Imperva, which hard-blocks cloud IPs even via Playwright. ScraperAPI proxies our requests through residential IPs and handles Imperva. We use this for SEDAR-only filings and for CSE (`.CN`) listings that TMX doesn't cover.
+- **TMX Money** (free, no quota) — for any ticker on TSX / TSXV / NEO, we grab the press-release feed directly from `money.tmx.com`. No anti-bot, no auth. Runs in Playwright on the self-hosted Mac runner.
+- **SEDAR+ via ScrapingBee** (free tier — 1,000 credits/month, ~20 companies × twice daily) — SEDAR+ is fronted by Imperva, which blocks every direct browser session (cloud IP, residential, headed Chrome — all of them). ScrapingBee runs the page in their own residential-IP headless Chrome and returns rendered HTML; Imperva treats their pool as human traffic. This is the only path past the block.
 
 Render runs the UI, stores data, sends the email, and tells the scraper which companies to visit. The scraper POSTs filings back to `/api/filings/ingest`.
 
@@ -82,7 +82,7 @@ The repo contains `.github/workflows/refresh-filings.yml`, which fires at 12:00 
 2. Add three secrets:
    - `REFRESH_API_URL` → your backend URL, e.g. `https://sedarwatchlist-api.onrender.com`
    - `REFRESH_SECRET` → the same long random string you set on Render
-   - `SCRAPERAPI_KEY` → your ScraperAPI key (Step 5 below). Skip this for now if you only watch TSX/TSXV — TMX covers those.
+   - `SCRAPINGBEE_API_KEY` → sign up at https://www.scrapingbee.com → free plan gives 1,000 credits/month, no card needed → **Account → API Key** → copy. Without this, SEDAR+ scrapes silently skip (TMX still works).
 3. **Actions tab → Scrape filings (TMX + SEDAR+) → Run workflow** (manual trigger) to test it. The job takes ~3–5 minutes (mostly Chromium download).
 4. Look at the log for `Backend response: {'received': N, 'inserted': M, 'email_sent': true|false}`.
 5. Every job uploads the rendered HTML of each fetched page as an artifact named `scrape-html`. If a company shows zero rows when you know it should have news, download the artifact and send me the relevant HTML file.

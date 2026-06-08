@@ -1,31 +1,74 @@
-"""SEDAR+ scraper using Playwright directly.
+"""SEDAR+ scraper via ScrapingBee (residential proxies + JS rendering).
 
-Designed for a self-hosted runner with a residential home IP.
+SEDAR+ is fronted by Imperva, which hard-blocks every automated browser we
+can launch — direct profile URLs return a fake 404, and the landing page
+trips the "does not comply with terms" block. ScrapingBee routes our
+requests through residential IPs and runs the page in their own headless
+Chrome, returning rendered HTML.
 
-Discovery (searching the landing page) is disabled — SEDAR+ blocks
-automated navigation to the search UI. Instead, users paste their
-company's profile URL via the web UI and we go straight to that page.
+ScrapingBee credit cost (residential render):
+  * Discovery search: ~25 credits/call, runs once per company (then cached)
+  * Profile fetch: ~25 credits/call, runs every scrape
+  * Free tier: 1,000 credits/month — enough for ~20 companies twice daily
+
+Discovery only runs once per company. After the first successful run the
+SEDAR+ profile URL is cached on the watchlist row, so subsequent runs only
+fetch the profile page directly.
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import date, datetime
+from difflib import SequenceMatcher
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlencode
 
+import httpx
 from bs4 import BeautifulSoup
-from playwright.async_api import Page, TimeoutError as PlaywrightTimeout
 
 LOG = logging.getLogger("sedar_plus")
 
 SEDAR_BASE = "https://www.sedarplus.ca"
+SCRAPINGBEE_ENDPOINT = "https://app.scrapingbee.com/api/v1/"
 
-NAV_TIMEOUT_MS = 60_000
-SETTLE_MS = 5_000   # let the SPA render after navigation
+SCRAPINGBEE_TIMEOUT = 90.0
 
 DATE_PATTERNS = ("%Y-%m-%d", "%d-%m-%Y", "%b %d, %Y", "%B %d, %Y", "%Y/%m/%d")
+_PROFILE_HREF_RE = re.compile(r"/csa-party/viewInstance/view\.html\?id=[\w-]+", re.IGNORECASE)
 _FILING_ID_RE = re.compile(r"(?:id|filingId|submissionId)=([\w-]+)", re.IGNORECASE)
+
+
+def _api_key() -> str:
+    key = os.environ.get("SCRAPINGBEE_API_KEY")
+    if not key:
+        raise RuntimeError("SCRAPINGBEE_API_KEY not set — cannot reach SEDAR+")
+    return key
+
+
+async def _fetch(url: str, *, wait_ms: int = 5_000) -> str:
+    """Fetch a SEDAR+ URL through ScrapingBee. Returns rendered HTML.
+
+    render_js=true is mandatory for SEDAR+ — Imperva's challenge requires
+    JS execution. premium_proxy=true routes through residential IPs since
+    cloud datacenter pools are blocked.
+    """
+    params = {
+        "api_key": _api_key(),
+        "url": url,
+        "render_js": "true",
+        "premium_proxy": "true",
+        "country_code": "ca",
+        "wait": str(wait_ms),
+        "block_resources": "false",
+    }
+    async with httpx.AsyncClient(timeout=SCRAPINGBEE_TIMEOUT) as client:
+        resp = await client.get(SCRAPINGBEE_ENDPOINT, params=params)
+        if resp.status_code != 200:
+            LOG.warning("ScrapingBee %s for %s: %s", resp.status_code, url, resp.text[:200])
+            resp.raise_for_status()
+        return resp.text
 
 
 def _parse_date(text: str) -> Optional[date]:
@@ -53,37 +96,70 @@ def _filing_id_from_url(url: str) -> Optional[str]:
     return nums[-1] if nums else None
 
 
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
 def _looks_like_block_page(html: str) -> bool:
-    """Detect SEDAR+ application-layer block page.
+    head = (html or "")[:2000].lower()
+    return "stormcaster" in head or "blocked by the system" in head or "support id" in head
 
-    The block page contains both 'blocked by the system' and 'support id'.
-    Checking for both together avoids false positives from 'support id'
-    appearing in SEDAR's own legitimate footer/help links.
+
+async def discover_profile_url(name: str) -> tuple[Optional[str], str]:
+    """Returns (profile_url, raw_html). URL is None if no good match.
+
+    Hits SEDAR+'s search URL directly via ScrapingBee — residential IP +
+    headless Chrome means Imperva doesn't fingerprint us as automation.
     """
-    head = (html or "")[:3000].lower()
-    return (
-        "stormcaster" in head
-        or ("blocked by the system" in head and "support id" in head)
-        or ("access denied" in head and "support id" in head)
-        or ("does not appear to comply" in head)
+    search_url = (
+        SEDAR_BASE
+        + "/csa-party/search/profilesearch.html?"
+        + urlencode({"q": name, "lang": "en"})
     )
-
-
-async def fetch_filings(page: Page, profile_url: str) -> tuple[list[dict], str]:
-    """Navigate directly to a known SEDAR+ profile URL and parse filings.
-
-    Returns (filings, raw_html). Empty list on block page or no rows.
-    """
-    LOG.info("SEDAR+: visiting profile %s", profile_url)
     try:
-        await page.goto(profile_url, wait_until="load", timeout=NAV_TIMEOUT_MS)
-    except PlaywrightTimeout:
-        LOG.warning("SEDAR+ profile timeout for %s", profile_url)
-    await page.wait_for_timeout(SETTLE_MS)
-    html = await page.content()
+        html = await _fetch(search_url, wait_ms=6_000)
+    except Exception as exc:
+        LOG.warning("SEDAR+ discovery fetch failed for %r: %s", name, exc)
+        return None, ""
 
     if _looks_like_block_page(html):
-        LOG.warning("SEDAR+ blocked profile page for %s", profile_url)
+        LOG.warning("SEDAR+ served the Imperva block page for search %r", name)
+        return None, html
+
+    soup = BeautifulSoup(html, "html.parser")
+    best: tuple[float, str, str] | None = None
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if not _PROFILE_HREF_RE.search(href):
+            continue
+        text = link.get_text(" ", strip=True)
+        if not text:
+            continue
+        score = _similarity(text, name)
+        if best is None or score > best[0]:
+            best = (score, text, href)
+    if not best:
+        LOG.warning("SEDAR+: no profile links found for %r", name)
+        return None, html
+    score, label, href = best
+    if score < 0.35:
+        LOG.warning("SEDAR+: weak best match for %r — %r (%.2f); skipping", name, label, score)
+        return None, html
+    url = href if href.startswith("http") else urljoin(SEDAR_BASE, href)
+    LOG.info("SEDAR+: discovered %r → %s (%.2f)", name, label, score)
+    return url, html
+
+
+async def fetch_filings(profile_url: str) -> tuple[list[dict], str]:
+    """Returns (filings, raw_html). Empty list on block page or no rows."""
+    try:
+        html = await _fetch(profile_url, wait_ms=5_000)
+    except Exception as exc:
+        LOG.warning("SEDAR+ profile fetch failed for %s: %s", profile_url, exc)
+        return [], ""
+
+    if _looks_like_block_page(html):
+        LOG.warning("SEDAR+ served the Imperva block page for %s", profile_url)
         return [], html
 
     soup = BeautifulSoup(html, "html.parser")
@@ -130,6 +206,4 @@ async def fetch_filings(page: Page, profile_url: str) -> tuple[list[dict], str]:
                     "source": "sedar_plus",
                 }
             )
-
-    LOG.info("SEDAR+: parsed %d filing(s) from %s", len(hits), profile_url)
     return hits, html
