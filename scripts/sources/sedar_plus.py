@@ -50,16 +50,18 @@ def _api_key() -> str:
 async def _fetch(url: str, *, wait_ms: int = 5_000) -> str:
     """Fetch a SEDAR+ URL through ScrapingBee. Returns rendered HTML.
 
-    render_js=true is mandatory for SEDAR+ — Imperva's challenge requires
-    JS execution. premium_proxy=true routes through residential IPs since
-    cloud datacenter pools are blocked.
+    SEDAR+ is fronted by Radware Bot Manager (not Imperva as we first
+    thought). ScrapingBee's `premium_proxy` pool gets captcha-walled by
+    Radware, so we need `stealth_proxy=true` — their highest-tier pool
+    designed for sites with aggressive bot detection. 75 credits/call vs
+    25, so this only makes sense if it actually works. `stealth_proxy`
+    is mutually exclusive with `premium_proxy` and `country_code`.
     """
     params = {
         "api_key": _api_key(),
         "url": url,
         "render_js": "true",
-        "premium_proxy": "true",
-        "country_code": "ca",
+        "stealth_proxy": "true",
         "wait": str(wait_ms),
         "block_resources": "false",
     }
