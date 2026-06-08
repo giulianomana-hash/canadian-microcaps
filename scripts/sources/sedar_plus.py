@@ -163,6 +163,15 @@ async def fetch_filings(profile_url: str) -> tuple[list[dict], str]:
         return [], html
 
     soup = BeautifulSoup(html, "html.parser")
+    # Diagnostic fingerprint so we can see what ScrapingBee actually
+    # returned without downloading the artifact every time.
+    title = (soup.title.string.strip() if soup.title and soup.title.string else "<no title>")
+    table_count = len(soup.find_all("table"))
+    profile_links = len(_PROFILE_HREF_RE.findall(html))
+    LOG.info(
+        "SEDAR+ profile fingerprint: title=%r len=%d tables=%d profile_links=%d",
+        title[:120], len(html), table_count, profile_links,
+    )
     hits: list[dict] = []
     seen_keys: set[str] = set()
 
