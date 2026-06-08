@@ -42,13 +42,40 @@ ARTIFACT_DIR = Path("artifacts")
 
 # ---------- backend I/O ----------
 
+# Render free tier spins web services down after 15 min idle. First
+# request after that takes 30-120 s to wake up. Generous timeout + a
+# couple of retries so a cold start doesn't fail the whole run.
+BACKEND_TIMEOUT = 180.0
+BACKEND_RETRIES = 3
+
+
+async def _backend_request(
+    method: str, client: httpx.AsyncClient, path: str, **kwargs
+) -> httpx.Response:
+    url = f"{BACKEND_URL}{path}"
+    headers = {"Authorization": f"Bearer {REFRESH_SECRET}"}
+    last_exc: Exception | None = None
+    for attempt in range(1, BACKEND_RETRIES + 1):
+        try:
+            resp = await client.request(
+                method, url, headers=headers, timeout=BACKEND_TIMEOUT, **kwargs
+            )
+            resp.raise_for_status()
+            return resp
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError) as exc:
+            last_exc = exc
+            LOG.warning(
+                "Backend %s %s timed out on attempt %d/%d: %s",
+                method, path, attempt, BACKEND_RETRIES, exc,
+            )
+            if attempt < BACKEND_RETRIES:
+                await asyncio.sleep(5 * attempt)
+    assert last_exc is not None
+    raise last_exc
+
+
 async def fetch_targets(client: httpx.AsyncClient) -> list[dict]:
-    resp = await client.get(
-        f"{BACKEND_URL}/api/scrape-targets",
-        headers={"Authorization": f"Bearer {REFRESH_SECRET}"},
-        timeout=60.0,
-    )
-    resp.raise_for_status()
+    resp = await _backend_request("GET", client, "/api/scrape-targets")
     return resp.json()
 
 
@@ -56,13 +83,7 @@ async def post_ingest(
     client: httpx.AsyncClient, filings: list[dict], discovered_urls: list[dict]
 ) -> dict:
     payload = {"filings": filings, "discovered_urls": discovered_urls}
-    resp = await client.post(
-        f"{BACKEND_URL}/api/filings/ingest",
-        json=payload,
-        headers={"Authorization": f"Bearer {REFRESH_SECRET}"},
-        timeout=60.0,
-    )
-    resp.raise_for_status()
+    resp = await _backend_request("POST", client, "/api/filings/ingest", json=payload)
     return resp.json()
 
 
